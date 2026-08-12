@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "agent-os",
+  "version": "0.6.1",
+  "description": "An agent operating system for legacy / high-ambiguity codebases. Scaffolds frontmatter-scannable task & error docs, source-of-truth docs, a generated index with coldness-based compaction (/agent-os:archive), a SessionStart nudge when memory grows large, an opt-in forced-sync git hook, and three self-maintaining router skills (task-scan, error-check, error-log). Run /agent-os:init to install it into any project.",
+  "author": {
+    "name": "kimjonghan",
+    "email": "jonghan721@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": ["legacy", "documentation", "source-of-truth", "tasks", "errors", "skills", "scaffold", "agent"],
+  "hooks": "./hooks/hooks.json"
+}

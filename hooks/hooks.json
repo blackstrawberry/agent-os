@@ -1,0 +1,17 @@
+{
+  "description": "agent-os: nudge to compact when memory grows large",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/agent-os-notify.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
