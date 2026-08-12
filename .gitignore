@@ -5,8 +5,8 @@ desktop.ini
 .playwright-mcp
 
 # Generated catalog -- rebuilt by .agent-os/scripts/reindex.sh.
-# Tracking it would conflict on every sync between machines.
+# Tracking it makes every checkout conflict on a file nobody edits by hand.
 .agent-os/prompts/index.jsonl
 
-# Scratch worktree used by .agent-os/scripts/release-to-main.sh
+# Scratch worktree used by the release script.
 .agent-os-release-tmp/
