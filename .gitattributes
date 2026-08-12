@@ -1,0 +1,7 @@
+# Deterministic line endings across Windows / macOS checkouts.
+# Without this, a machine with core.autocrlf=true can commit or check out CRLF
+# into POSIX shell scripts, which then die with "\r: command not found".
+* text=auto eol=lf
+
+*.sh       text eol=lf
+pre-commit text eol=lf

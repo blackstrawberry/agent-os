@@ -3,3 +3,10 @@ desktop.ini
 .DS_Store
 .omc
 .playwright-mcp
+
+# Generated catalog -- rebuilt by .agent-os/scripts/reindex.sh.
+# Tracking it would conflict on every sync between machines.
+.agent-os/prompts/index.jsonl
+
+# Scratch worktree used by .agent-os/scripts/release-to-main.sh
+.agent-os-release-tmp/
