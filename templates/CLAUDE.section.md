@@ -1,39 +1,51 @@
 <!-- agent-os:begin -->
 ## Agent Operating Protocol (agent-os)
 
-> Every task follows this order. Read the relevant docs BEFORE working; sync docs/skills AFTER.
-> Model: Foundation (this guide) -> Source of Truth (.agent-os/docs/) -> Skills -> Validation.
-> All agent-os files live under `.agent-os/` to keep the project root clean.
+<!-- (How)/(Why) tags and the size budget: see .agent-os/scripts/bare-test.md.
+     Over budget, replace -- never append. -->
 
-### Fast path (read first)
-**Trivial ops run DIRECTLY -- no protocol, no scans.** A commit, a push, a single shell command, a one-line answer, a small clarification: just do it. NEVER run task-scan / read-docs / error-check because the user said "commit", "push", or "run X". Treating a commit as substantive work is the #1 cause of a simple request taking minutes -- do not do it. When unsure whether a request is trivial, assume trivial and skip the protocol.
+### Sizing the work (How)
+- **Trivial** (a commit, one command, a one-line answer): do it. No scans.
+- **Local** (one file, a clear bug): `error-check` only. A task doc is optional.
+- **Broad** (many files, design change, new feature): everything below.
+When unsure, assume the smaller one.
 
-### Work protocol
-> Scope: the numbered steps below apply ONLY to **substantive work** -- multi-step changes, new features, debugging, refactors. Anything on the Fast path above skips all of it.
-1. **task-scan** -- on a new request, scan `.agent-os/prompts/tasks/` (+`completed/`) frontmatter for related prior tasks and context. (skill `/agent-os:task-scan`)
-2. **Read docs** -- read `.agent-os/docs/` for the area to orient yourself. Treat docs as a verified summary that can drift -- **the code is ground truth.** If code and docs disagree, trust the code, **fix the doc** in the same change, and log it (error-log).
-3. **error-check** -- scan `.agent-os/prompts/errors/` frontmatter for past mistakes in this area. (skill `/agent-os:error-check`)
-4. **Execute**.
-5. **error-log** -- if you judge you made a mistake/error, record it yourself in `.agent-os/prompts/errors/`. (skill `/agent-os:error-log`)
-6. **Sync** -- when behavior or design changes, update `.agent-os/docs/` and skills **in the same change**.
-7. **Close** -- on completion set frontmatter `status: completed` and move the task to `.agent-os/prompts/tasks/completed/`.
+### Before broad work, you must KNOW (Why)
+No fixed order -- get these however is cheapest: related prior work and rejected decisions;
+the source of truth (`.agent-os/docs/`, `07_known-risks.md` first); past traps in this area.
+Low top score = nothing related. Say so and move on.
 
-### Source of Truth (.agent-os/docs/)
-- `.agent-os/docs/` is the single source of truth for structure and core logic. Index: `.agent-os/docs/README.md`.
-- Change shared core / schema / flow / conventions -> fix the matching docs in the same change. Do not mark a task complete if docs are stale.
-- NEVER copy secret values (credentials, keys) into docs/prompts/chat. Point at the file location only.
-- Write only VERIFIED facts. Do not infer where a symbol is defined from a `require`/import line -- confirm with grep before documenting.
+### Finding things (How)
+```sh
+sh .agent-os/scripts/rank.sh -q "<words>" -f "<paths you will touch>" -n 8
+```
+Open the top 3 at most. **Never** grep the index for `"k":"error"` -- that loads every one.
+`-f` is the strongest signal: a doc naming a file you will touch matters with zero keyword
+hits. Ask in any language; `.agent-os/vocab.txt` expands the query. A search that should
+have hit but did not means a missing vocab line -- add it.
 
-### Forced sync (opt-in)
-- `.agent-os/scripts/hooks/pre-commit` -- (1) blocks commits with missing prompt frontmatter, (2) warns when code changes without a `.agent-os/docs/` update.
-- Enable once: `git config core.hooksPath .agent-os/scripts/hooks`. Manual check: `sh .agent-os/scripts/check-prompts.sh`.
+### Recording (Why)
+- **Errors**: same root cause as an existing one -> bump its `recurrence` and `last_seen`,
+  add a history row. Never open a second doc for one trap.
+  **At `recurrence` 3, editing the doc is not a response** -- promote it to
+  `docs/07_known-risks.md`, or build a mechanical gate (hook, lint, test).
+- **Decisions** (`docs/adr/`): only when reversal is expensive AND a real alternative was
+  rejected. Two sections carry it -- *Rejected alternatives* (named as someone would
+  propose them) and *Revisit when*; without the second a deferral becomes permanent.
+  Indexed, so a re-proposal hits the rejection first. Keep them rare.
+- **Docs are the source of truth, but code is ground truth.** They disagree -> fix the
+  doc in the same change. Never copy secret values anywhere. Verified facts only: confirm
+  where a symbol lives with grep, never infer it from an import line.
 
-### Scaling (keep memory cheap to scan)
-- Scan `.agent-os/prompts/index.jsonl` (generated catalog), not every file. Regenerate: `sh .agent-os/scripts/reindex.sh` (pre-commit keeps it fresh).
-- Compact COLD docs only: finished AND unreferenced (`refs == 0`) AND unpinned AND not recently updated. Old-but-referenced or old-but-edited docs stay. Preview `sh .agent-os/scripts/agent-os-compact.sh`; apply via `/agent-os:archive`. Pin permanent docs with `pin: true`.
-- Roll recurring error lessons into `.agent-os/docs/` (known-risks) before archiving.
+### Closing (How)
+`status: completed`, move to `prompts/tasks/completed/`, docs updated in the same change.
+`hooks/pre-commit` enforces the mechanical part (`git config core.hooksPath
+.agent-os/scripts/hooks`).
 
-### Skill management
-- Skills: `task-scan`, `error-check`, `error-log` (agent-os plugin). Turn recurring work into a skill.
-- If a path/schema a skill or doc references drifts as the project changes, fix it in the same change. Every skill is subject to change.
+### Keeping memory cheap (How)
+- Promote a lesson to `07_known-risks.md` **before** archiving the incident -- that is what
+  makes archiving safe. Preview `agent-os-compact.sh`, apply via `/agent-os:archive`.
+- `pin: true` = load-bearing forever, not important. Over-pinning kills cold detection.
+- `agent-os-health.sh` reports what has gone quiet (stale index, rotting tasks, over-pinning,
+  unpromoted repeats, empty eval set, prompt over budget). Read-only.
 <!-- agent-os:end -->

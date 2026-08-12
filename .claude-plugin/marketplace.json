@@ -10,9 +10,9 @@
     {
       "name": "agent-os",
       "source": "./",
-      "description": "Agent operating system for legacy/ambiguous codebases: task & error docs (frontmatter), source-of-truth docs, self-maintaining router skills (task-scan, error-check, error-log), and a one-command scaffolder.",
+      "description": "Agent operating system for legacy/ambiguous codebases: frontmatter task, error and decision docs, source-of-truth docs, a relevance ranker that returns the top few instead of every match, a cross-language alias map, recurrence counting, and a one-command scaffolder.",
       "category": "productivity",
-      "tags": ["legacy", "source-of-truth", "tasks", "errors", "scaffold"]
+      "tags": ["legacy", "source-of-truth", "tasks", "errors", "scaffold", "ranking", "adr"]
     }
   ]
 }

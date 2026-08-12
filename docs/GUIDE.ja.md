@@ -24,11 +24,14 @@ agent-os は一回限りのツールではない。**human-in-the-loop サイク
    /plugin marketplace add /path/to/agent-os-plugin
    /plugin install agent-os@agent-os
    ```
-2. **スキャフォルド**: `/agent-os:init`(`--eval` で評価セットも)。
+2. **スキャフォルド**: `/agent-os:init`(評価セットは既定で含む。`--no-eval` で除外)。既に導入済みなら `sh <plugin>/scripts/init.sh --update .` が `CLAUDE.md` のプロトコル区間だけを更新する(マーカー外は触らない)。
 3. **強制同期を有効化**(推奨): `git config core.hooksPath .agent-os/scripts/hooks`。
 4. **Source of Truth の作成** — 最重要。エージェントにリポジトリ全体をスキャンさせ `.agent-os/docs/01..07`(概要・アーキテクチャ・ディレクトリ地図・コア・データ層・規約・リスク)を作成させる。**ここで一度人間がレビュー。** 以降すべてが `.agent-os/docs/` を真実として信頼するため、ここが誤ると後工程が汚染される。検証済みの事実のみ記載。
 
-完了後、プロジェクトには `CLAUDE.md`(プロトコル)、`.agent-os/docs/`(真実)、`.agent-os/prompts/`(メモリ)、スキル、フックが揃う。
+5. **評価セットを5行埋める** — `.agent-os/prompts/eval/eval-set.md`。**このプロジェクトが実際に踏んだ罠**から取る。ここが最も多い失敗点で、19インストール中17が最後まで埋めなかった。これが無ければ「その規則はまだ価値があるか」を永久に問えない。
+6. **`.agent-os/vocab.txt` を整える** — このプロジェクトが使う軸だけ残し、固有語を足す。ある言語の質問が別言語で書かれた文書に届くための装置。
+
+完了後、プロジェクトには `CLAUDE.md`(プロトコル)、`.agent-os/docs/`(真実)、`.agent-os/prompts/`(メモリ)、`vocab.txt`(別名マップ)、スキル、フックが揃う。
 
 ---
 
@@ -36,12 +39,16 @@ agent-os は一回限りのツールではない。**human-in-the-loop サイク
 
 役割: **[H]** = 人間、**[A]** = エージェント。
 
+### ステップ0 — 規模を判定する  [A]
+すべてのリクエストがフルループに値するわけではない。**trivial**(コミット・コマンド1回・一行の答え)は即答。**局所**(1ファイル・明確なバグ)は `error-check` のみ。**広域**(複数ファイル・設計変更・新機能)だけがステップ1〜6を通る。二分法が中規模の作業にフルコースを課すことが、プロトコルが遅いと言われる原因だった。
+
 ### ステップ1 — タスクのフレーム化  [H が述べる -> A が書く]
 人間がリクエストを自然言語で述べる。するとエージェントが:
-- **task-scan**(インデックスに関連する過去タスクは?)、
-- 関連する **`.agent-os/docs/`** を読む、
+- **task-scan** — スキャンではなく**ランキング**。`rank.sh` が全件を採点し、上位3件だけを開く。これから触るパスを `-f` で渡せば、キーワードが0ヒットでもそのファイルの過去エラーが浮上する、
+- 結果に**意思決定記録**があれば**先に読む** — 誰かが既にその案を却下しており、「再検討条件」がまだ有効かを教えてくれる、
+- 関連する **`.agent-os/docs/`** を読む(`07_known-risks.md` から)、
 - **error-check**(以前これで失敗した?)、
-- `.agent-os/prompts/tasks/NN_slug.md` に **リクエスト / 範囲・範囲外 / 計画** を記入。
+- `.agent-os/prompts/tasks/NN_slug.md` に **リクエスト / 範囲・範囲外 / 計画** を記入。**`tags` を含める** — タグの無い文書は後でランカーが見つけられない。
 
 ### ステップ2 — プラン確認  [H ゲート]
 タスク文書の **範囲・計画** を読む。誤解を最も安く正せる地点。範囲修正・誤った前提の却下・承認。**誤ったフレームの上で実行を始めない。**
@@ -56,7 +63,9 @@ agent-os は一回限りのツールではない。**human-in-the-loop サイク
 終了前にエージェントが:
 - 変わった動作・構造の分だけ **`.agent-os/docs/`** を更新(SoT 同期 — コードだけ変えて docs 未更新ならフックが警告)、
 - 手順が繰り返されたら **新スキル** を提案または既存を更新、
-- ミスをしたら **error-log** を記録し、繰り返す教訓を `.agent-os/docs/07`(known-risks)へ昇格。
+- ミスをしたら **error-log** — ただし**書く前に検索する**。同じ根本原因なら新規文書ではなく既存の `recurrence`・`last_seen` を上げる。1つの罠に文書が2つあると、3回踏んだ罠が1回きり3件に見える、
+- **`recurrence` 3 以降、文書の修正は応答ではない。** 3回の繰り返しは散文では防げない証拠だ。教訓を `docs/07_known-risks.md` へ昇格させるか、機械的ゲート(フック・lint・テスト)のタスクを開く、
+- 代替案を実際に検討して捨て、かつ巻き戻しが高価な選択なら `.agent-os/docs/adr/` に**意思決定記録**を — 何を却下し、何が変われば再検討するか。
 
 これがループごとにシステムを**大きくなるだけでなく良くする**核心。
 
@@ -64,7 +73,10 @@ agent-os は一回限りのツールではない。**human-in-the-loop サイク
 frontmatter `status: completed`、ファイルを `.agent-os/prompts/tasks/completed/` へ移動、`related_docs`/`related_errors` を記入。インデックス更新、コミット(pre-commit が frontmatter をリント + docs 未同期を警告)。
 
 ### ステップ7 — 保守  [H、ナッジが出たら]
-セッション開始ナッジが「メモリが大きい」と言ったら **`/agent-os:archive`** を実行(コールドをプレビュー → 承認でアーカイブ)。コールド = 完了 AND 無参照 AND 未ピン AND 古い — 単なる古さではない。
+沈黙を破るのは `agent-os-health.sh` だ。文書より古いインデックス、30日放置された未完タスク、ピンの濫用(`pin` は「重要」ではなく「恒久的に load-bearing」の意。濫用するとコールド判定自体が成立しない)、規則にならなかった再発、空の評価セット、予算超過のプロトコルを報告する。**読み取り専用** — reindex しろと言うだけで、自分ではやらない。
+
+メモリが大きいと言われたら **`/agent-os:archive`**(コールドをプレビュー → 承認でアーカイブ)。コールド = 完了 AND 無参照 AND 未ピン AND 古い — 単なる古さではない。
+**教訓を known-risks へ先に昇格させる。** 昇格せずアーカイブすれば教訓は消え、昇格せず保存すればインデックスが膨らむ。昇格が唯一の出口だ。
 
 その後、次のリクエストがループを再開。
 
@@ -104,7 +116,10 @@ frontmatter `status: completed`、ファイルを `.agent-os/prompts/tasks/compl
 
 - **docs 同期**: 動作・構造の変更ごとに同じタスク内で。pre-commit 警告で強制。
 - **compaction**: ナッジが出たら(インデックスサイズ/コールド数 vs 閾値)。アーカイブの*前*に繰り返すエラーの教訓を `.agent-os/docs/` へロールアップ。
-- **eval**(`--eval` で導入時): スキル/docs 編集後に `.agent-os/prompts/eval` の設問でプロジェクトの罠に正答し続けるか確認。
+- **eval**: スキル/docs 編集後に `.agent-os/prompts/eval` の設問でプロジェクトの罠に正答し続けるか確認。
+- **素の状態テスト**(モデル世代ごとに1回): プロトコル区間をコメントアウトして評価セットを回し、次に有効にして回して比較する。手順は [`scripts/bare-test.md`](../scripts/bare-test.md)。**規則の削除を正当化する唯一の根拠**であり、差が無いという結果自体が成果だ(失敗した実験ではない)。さもなければ規則は溜まる一方になる。
+- **語彙**: 当たるはずの検索が空なら、欠けた語を `vocab.txt` に足す。クエリに合わせて古い文書をタグ付けし直さない。
+- **タグ**: `tags-gap.sh` がタグ空で誰にも見つけられない文書を一覧する。**報告のみ** — 最高配点のフィールドに入った誤タグは空欄より悪い。
 - **スキルは固定ではない**: パス/スキーマがずれたら、参照するスキルを同じ変更で修正。
 
 ---
@@ -113,16 +128,26 @@ frontmatter `status: completed`、ファイルを `.agent-os/prompts/tasks/compl
 
 | 項目 | 説明 |
 |---|---|
-| `/agent-os:init [--eval]` | 構造をスキャフォルド |
+| `/agent-os:init [--no-eval]` | 構造をスキャフォルド |
+| `init.sh --update` | 既存 `CLAUDE.md` のプロトコル区間のみ更新 |
 | `/agent-os:archive [--apply]` | コールド文書をアーカイブ(プレビュー→適用) |
-| スキル `task-scan` | 関連する過去タスク + docs ルーティング |
+| スキル `task-scan` | 関連する過去作業 + 却下履歴の発見、docs ルーティング |
 | スキル `error-check` | 作業前に過去のミスを点検 |
-| スキル `error-log` | エージェントが自らミスを記録 |
-| `CLAUDE.md` | 常時ロードされる作業プロトコル |
+| スキル `error-log` | 自らミスを記録(先に検索、再発はカウント) |
+| `CLAUDE.md` | 常時ロードされる作業プロトコル(予算 3,000字) |
 | `.agent-os/docs/` | source of truth(実スキャンで埋める) |
+| `.agent-os/docs/07_known-risks.md` | 罠を規則として。**作業前に読む** |
+| `.agent-os/docs/adr/` | 意思決定: 何を却下し、何が変われば再検討するか |
+| `.agent-os/vocab.txt` | 概念 → 言語ごとの表記 |
 | `.agent-os/prompts/tasks/` `errors/` | 作業メモリ(frontmatter 文書) |
-| `.agent-os/prompts/index.jsonl` | 毎ループ走査する生成カタログ |
-| `.agent-os/scripts/agent-os-health.sh` | インデックスサイズ/コールド数レポート |
+| `.agent-os/prompts/eval/eval-set.md` | 正解のある5問。規則の寿命を測る唯一の器具 |
+| `.agent-os/prompts/index.jsonl` | ランカーが読む生成カタログ |
+| `rank.sh -q "..." -f "パス"` | **探すときに使うもの。** 全件ではなく上位数件 |
+| `reindex.sh` | インデックス再生成 |
+| `check-prompts.sh [--report]` | frontmatter lint。`--report` は失敗しない |
+| `tags-gap.sh` | タグ空で誰にも見つけられない文書 |
+| `agent-os-health.sh [--oneline]` | 静かになったもの。読み取り専用 |
+| `bare-test.md` | このハーネスはまだ価値を出しているか |
 | `git config core.hooksPath .agent-os/scripts/hooks` | 強制同期 on |
 
 なぜこの設計かは [CONCEPT.ja.md](CONCEPT.ja.md) を参照。

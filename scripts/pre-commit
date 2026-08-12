@@ -16,10 +16,19 @@ staged=$(git diff --cached --name-only)
 
 # Only lint + reindex when this commit touches prompt docs.
 if printf '%s\n' "$staged" | grep -q "^$AOS/prompts/"; then
-  sh "$root/$AOS/scripts/check-prompts.sh" || {
-    echo "[pre-commit] prompts frontmatter check failed -- fix the items above and re-commit"
-    exit 1
-  }
+  # Lint only the documents this commit adds or changes. A full-tree lint would hold
+  # the commit hostage to every legacy document -- one install has 268 pre-existing
+  # failures, so the hook could never pass there and would simply be turned off.
+  # Touched documents are checked strictly, including enum values.
+  changed=$(git diff --cached --name-only --diff-filter=ACM -- "$AOS/prompts" | grep '\.md$')
+  if [ -n "$changed" ]; then
+    # shellcheck disable=SC2086
+    sh "$root/$AOS/scripts/check-prompts.sh" $changed || {
+      echo "[pre-commit] frontmatter check failed on the documents you are committing -- fix the items above and re-commit"
+      echo "[pre-commit] whole-tree status (non-blocking): sh $AOS/scripts/check-prompts.sh --report"
+      exit 1
+    }
+  fi
   if [ -f "$root/$AOS/scripts/reindex.sh" ]; then
     sh "$root/$AOS/scripts/reindex.sh" >/dev/null 2>&1 && git add "$AOS/prompts/index.jsonl" 2>/dev/null
   fi

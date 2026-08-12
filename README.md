@@ -17,14 +17,20 @@ The idea agent-os borrows (from Anthropic's writing on building *skills*): feedi
 - **Foundation** (`CLAUDE.md`): the work protocol every request follows (the router).
 - **Source of Truth** (`.agent-os/docs/`): a verified description of the system, written from a real scan. The code is ground truth; when docs disagree, trust the code and fix the docs.
 - **Skills**: three router skills — `task-scan` (find related prior work), `error-check` (avoid repeating mistakes), `error-log` (the agent records its own mistakes).
-- **Validation** (`.agent-os/prompts/eval/`): a known-answer eval set that checks, with numbers, whether a change is an improvement.
+- **Validation** (`.agent-os/prompts/eval/`): a known-answer eval set that checks, with numbers, whether a change is an improvement — and whether a rule still earns its place.
 
 ## What you get
 
+- **Ranking, not scanning.** `rank.sh` scores every index entry and returns the best few; the skills open the top 3. Recall was never the problem — *precision* was. A flat grep finds the right document and buries it among dozens; the ranker puts it first.
+- **The strongest signal is the file you are about to touch.** Pass the paths to `-f` and a past error about one of them surfaces even with zero keyword matches.
+- **Ask in any language.** `.agent-os/vocab.txt` maps a concept to its spellings, so a Japanese question reaches a Korean-written error. Documents are never retagged — only the query is expanded.
+- **Recurrence is counted, not narrated.** The same root cause bumps a counter instead of opening a second document. At three repeats, editing the document stops being an acceptable response: promote the lesson or build a mechanical gate.
+- **Decision records** (`.agent-os/docs/adr/`): what was *rejected* and *what would reopen it*. Indexed, so a re-proposal hits the rejection before the work starts.
 - **Skills** (auto-routing): `task-scan`, `error-check`, `error-log`
-- **Command**: `/agent-os:init [--no-eval]` — scaffolds everything under **`.agent-os/`** (prompts, docs, scripts, and the Validation eval set) plus a root `CLAUDE.md` protocol section, keeping the project root clean (never overwrites existing files); `--no-eval` skips the eval set
-- **Forced sync** (opt-in): a `pre-commit` hook that blocks commits with missing frontmatter and warns when code changes without a `.agent-os/docs/` update
-- **Bounded memory**: a generated `.agent-os/prompts/index.jsonl` (scan one file, not N) + `/agent-os:archive`, which archives only *cold* docs — finished, unreferenced, unpinned, and old (not by age alone); full text stays in git. A SessionStart hook nudges you to compact once memory grows past a threshold.
+- **Command**: `/agent-os:init [--no-eval]` — scaffolds everything under **`.agent-os/`** plus a root `CLAUDE.md` protocol section, keeping the project root clean (never overwrites existing files). `--update` refreshes only the protocol block in an existing `CLAUDE.md`.
+- **Forced sync** (opt-in): a `pre-commit` hook that lints the frontmatter of the documents you are committing — enum values, dates, unreplaced placeholders — and warns when code changes without a `.agent-os/docs/` update. Only what you touch is held strictly, so an existing project is not blocked by its own history.
+- **Bounded memory**: a generated `.agent-os/prompts/index.jsonl` + `/agent-os:archive`, which archives only *cold* docs — finished, unreferenced, unpinned, and old (not by age alone); full text stays in git. Promote the lesson to known-risks *first* — that is what makes archiving safe.
+- **A health check for what has gone quiet**: an index older than the docs, open tasks nobody has touched in 30 days, over-pinning, repeats that never became rules, an empty eval set, a protocol that has outgrown its budget. Read-only; it tells you, it does not act.
 
 ## Install
 
@@ -52,11 +58,14 @@ After scaffolding:
 
 1. `git config core.hooksPath .agent-os/scripts/hooks` — enable the forced-sync hook
 2. Fill `.agent-os/docs/` with the project's source of truth from a first full scan (the scaffold only writes the index skeleton)
-3. From then on, every request follows: `task-scan → read docs → error-check → execute → error-log → sync`
+3. Fill `.agent-os/prompts/eval/eval-set.md` — five rows, from what has actually bitten this project. It is the only instrument that can tell you later whether a rule still earns its place; without it, adding *and* removing rules are both guesses
+4. Work is sized, not marched through: **trivial** goes straight to the answer, **local** needs only `error-check`, **broad** takes the full loop
 
 ## Tuning
 
 Thresholds are derived from your context window, not hardcoded. Set `AGENT_OS_CONTEXT_TOKENS` to your model's window; `AGENT_OS_MAX_ACTIVE` (default `CONTEXT_TOKENS/1000`) and `AGENT_OS_COMPACT_NUDGE` (default `MAX/4`) scale from it. See [docs/CONCEPT.md](docs/CONCEPT.md#scaling-keeping-memory-cheap) for the math.
+
+The text agent-os injects into every session is capped too — 3000 characters for the protocol block, 2000 per skill body. Over budget the rule is *replace, not append*: rationale belongs in `.agent-os/docs/`, not in a prompt that is read every time.
 
 ## Structure
 
@@ -64,12 +73,25 @@ Thresholds are derived from your context window, not hardcoded. Set `AGENT_OS_CO
 agent-os/
 ├── .claude-plugin/{plugin.json, marketplace.json}
 ├── skills/{task-scan,error-check,error-log}/SKILL.md
-├── commands/init.md
-├── scripts/{init.sh, check-prompts.sh, pre-commit}
-├── templates/            # scaffolded into the target project
+├── commands/{init.md, archive.md}
+├── scripts/
+│   ├── init.sh              # scaffold, or --update an existing CLAUDE.md
+│   ├── reindex.sh rank.sh   # build the index; rank against it
+│   ├── check-prompts.sh     # frontmatter lint (keys, enums, dates, placeholders)
+│   ├── tags-gap.sh          # which docs are unfindable because tags are empty
+│   ├── agent-os-compact.sh  # cold-doc archival
+│   ├── agent-os-health.sh   # what has gone quiet
+│   ├── bare-test.md         # is this harness still earning its place?
+│   └── pre-commit
+├── templates/            # scaffolded into the target project (incl. vocab.txt, ADR, known-risks)
 ├── docs/CONCEPT.md       # the idea
 └── README*.md
 ```
+
+Every script is a single `awk` pass over the index rather than a shell loop. That is not
+cosmetic: on Windows, where process creation is expensive, the loop version took **43 minutes**
+to index a 260-document repo and **6 minutes** to preview a compaction. Tools that slow cannot
+be run, and a check nobody runs is a check that does not exist.
 
 ## Conventions
 

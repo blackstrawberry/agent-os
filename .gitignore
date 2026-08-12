@@ -7,6 +7,7 @@ desktop.ini
 # Generated catalog -- rebuilt by .agent-os/scripts/reindex.sh.
 # Tracking it makes every checkout conflict on a file nobody edits by hand.
 .agent-os/prompts/index.jsonl
+.agent-os/prompts/index.jsonl.tmp.*
 
 # Scratch worktree used by the release script.
 .agent-os-release-tmp/

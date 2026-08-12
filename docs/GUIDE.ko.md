@@ -24,11 +24,14 @@ agent-os는 일회성 도구가 아니다. **human-in-the-loop 사이클**이다
    /plugin marketplace add /path/to/agent-os-plugin
    /plugin install agent-os@agent-os
    ```
-2. **스캐폴드**: `/agent-os:init` (`--eval` 붙이면 평가셋 포함).
+2. **스캐폴드**: `/agent-os:init` (평가셋 포함. `--no-eval` 로 제외). 이미 깔려 있으면 `sh <plugin>/scripts/init.sh --update .` 가 `CLAUDE.md` 의 프로토콜 구간만 갱신한다(마커 밖은 안 건드림).
 3. **강제 동기화 활성화**(권장): `git config core.hooksPath .agent-os/scripts/hooks`.
 4. **Source of Truth 작성** — 가장 중요. 에이전트에게 레포 전체 스캔 후 `.agent-os/docs/01..07`(개요·아키텍처·디렉터리맵·코어·데이터레이어·컨벤션·리스크) 작성 지시. **여기서 한 번 사람이 리뷰.** 이후 모든 작업이 `.agent-os/docs/`를 진실로 신뢰하므로 여기 틀리면 뒤가 다 오염됨. 검증된 사실만 기재.
 
-완료 후 프로젝트엔: `CLAUDE.md`(프로토콜), `.agent-os/docs/`(진실), `.agent-os/prompts/`(메모리), 스킬, 훅이 갖춰진다.
+5. **평가셋 5행 작성** — `.agent-os/prompts/eval/eval-set.md`. **이 프로젝트가 실제로 물린 것**에서 뽑는다. 흔한 실패 지점이다: 설치 19곳 중 17곳이 끝내 안 채웠고, 이게 없으면 「그 규칙이 아직 값을 하는가」를 영원히 못 묻는다.
+6. **`.agent-os/vocab.txt` 손질** — 이 프로젝트가 쓰는 축만 남기고 고유어를 더한다. 한 언어로 물어 다른 언어로 적힌 문서에 닿게 하는 장치다.
+
+완료 후 프로젝트엔: `CLAUDE.md`(프로토콜), `.agent-os/docs/`(진실), `.agent-os/prompts/`(메모리), `vocab.txt`(별칭 맵), 스킬, 훅이 갖춰진다.
 
 ---
 
@@ -36,12 +39,16 @@ agent-os는 일회성 도구가 아니다. **human-in-the-loop 사이클**이다
 
 역할: **[H]** = 사람, **[A]** = 에이전트.
 
+### 0단계 — 크기 판정  [A]
+모든 요청이 풀 루프를 받을 필요는 없다. **trivial**(커밋·명령 1회·한 줄 답)은 바로 답한다. **국소**(파일 1개·명확한 버그)는 `error-check` 만. **광역**(다중 파일·설계 변경·신규 기능)만 1~6단계를 탄다. 이분법이 중간 크기 작업에 풀코스를 물리는 게 프로토콜이 느리다는 평판의 원인이다.
+
 ### 1단계 — 태스크 프레이밍  [H 진술 -> A 작성]
 사람이 요청을 자연어로 말한다. 그러면 에이전트가:
-- **task-scan**(인덱스에서 관련 과거 태스크?),
-- 관련 **`.agent-os/docs/`** 읽기,
+- **task-scan** — 스캔이 아니라 **랭킹**이다. `rank.sh` 가 전건에 점수를 매기고 상위 3건만 연다. 지금 만질 경로를 `-f` 로 넘기면 키워드 0히트여도 그 파일의 과거 에러가 뜬다,
+- 결과에 **의사결정 기록**이 있으면 **먼저 읽는다** — 누가 이미 그 안을 기각했고, 「재검토 조건」이 아직 유효한지 말해 준다,
+- 관련 **`.agent-os/docs/`** 읽기 (`07_known-risks.md` 먼저),
 - **error-check**(전에 이걸로 실수?),
-- `.agent-os/prompts/tasks/NN_slug.md`에 **요청 / 범위·비범위 / 계획** 작성.
+- `.agent-os/prompts/tasks/NN_slug.md`에 **요청 / 범위·비범위 / 계획** 작성. **`tags` 포함** — 태그 없는 문서는 나중에 랭킹이 못 찾는다.
 
 ### 2단계 — 플랜 리뷰  [H 게이트]
 태스크 문서의 **범위·계획**을 읽는다. 오해를 가장 싸게 잡는 지점. 범위 수정·잘못된 가정 기각·승인. **잘못된 프레임 위에서 수행 시작 금지.**
@@ -56,7 +63,9 @@ agent-os는 일회성 도구가 아니다. **human-in-the-loop 사이클**이다
 종료 전 에이전트가:
 - 동작·구조가 바뀐 만큼 **`.agent-os/docs/`** 갱신(SoT 동기화 — 코드만 바뀌고 docs 안 바뀌면 훅이 경고),
 - 절차가 반복되면 **새 스킬** 제안 또는 기존 스킬 수정,
-- 실수했으면 **error-log** 기록, 반복 교훈은 `.agent-os/docs/07`(known-risks)로 승격.
+- 실수했으면 **error-log** — 단 **적기 전에 검색한다.** 같은 근본원인이면 새 문서가 아니라 기존 문서의 `recurrence`·`last_seen` 을 올린다. 한 함정에 문서 2개면 3번 물린 함정이 1회짜리 3건으로 보인다,
+- **`recurrence` 3부터는 문서 수정이 응답이 아니다.** 3번 반복은 산문이 못 막는다는 증거다. 교훈을 `docs/07_known-risks.md` 로 승격하거나, 기계적 게이트(훅·린트·테스트) 태스크를 연다,
+- 대안을 실제로 검토해 버렸고 되돌리기 비싼 선택이면 `.agent-os/docs/adr/` 에 **의사결정 기록** — 무엇을 기각했고 무엇이 바뀌면 다시 볼지.
 
 이게 루프마다 시스템이 **커지기만 하는 게 아니라 좋아지게** 만드는 핵심.
 
@@ -64,7 +73,10 @@ agent-os는 일회성 도구가 아니다. **human-in-the-loop 사이클**이다
 frontmatter `status: completed`, 파일을 `.agent-os/prompts/tasks/completed/`로 이동, `related_docs`/`related_errors` 채움. 인덱스 갱신, 커밋(pre-commit이 frontmatter 린트 + docs 미동기화 경고).
 
 ### 7단계 — 유지보수  [H, 넌지 떴을 때]
-세션 시작 넌지가 "메모리 큼"이라 하면 **`/agent-os:archive`** 실행(콜드 미리보기 → 승인 시 아카이브). 콜드 = 완료 AND 무참조 AND 미고정 AND 오래됨 — 단순 나이 아님.
+침묵을 깨는 건 `agent-os-health.sh` 다. 문서보다 낡은 인덱스, 30일 방치된 열린 태스크, pin 남용(`pin` 은 「중요」가 아니라 「영구 로드베어링」이다 — 남용하면 콜드 판정 자체가 성립 안 한다), 규칙이 되지 못한 재발, 빈 평가셋, 예산을 넘긴 프로토콜을 보고한다. **읽기 전용** — reindex 하라고 말할 뿐 직접 하지 않는다.
+
+메모리가 크다고 하면 **`/agent-os:archive`**(콜드 미리보기 → 승인 시 아카이브). 콜드 = 완료 AND 무참조 AND 미고정 AND 오래됨 — 단순 나이 아님.
+**교훈을 known-risks 로 먼저 승격한다.** 승격 없이 아카이브하면 교훈이 사라지고, 승격 없이 보존하면 인덱스가 부푼다. 승격이 유일한 출구다.
 
 이후 다음 요청이 루프를 다시 시작.
 
@@ -104,7 +116,10 @@ frontmatter `status: completed`, 파일을 `.agent-os/prompts/tasks/completed/`�
 
 - **docs 동기화**: 동작·구조 변경 시 같은 태스크 안에서. pre-commit 경고로 강제.
 - **compaction**: 넌지 떴을 때(인덱스 크기/콜드 수 vs 임계). 아카이브 *전에* 반복 에러 교훈을 `.agent-os/docs/`로 롤업.
-- **eval**(`--eval`로 깔았으면): 스킬/docs 수정 후 `.agent-os/prompts/eval` 질문으로 함정 정답 유지 확인.
+- **eval**: 스킬/docs 수정 후 `.agent-os/prompts/eval` 질문으로 함정 정답 유지 확인.
+- **맨몸 테스트**(모델 세대마다 1회): 프로토콜 블록을 주석 처리하고 평가셋을 돌린 뒤, 켜고 다시 돌려 비교한다. 절차는 [`scripts/bare-test.md`](../scripts/bare-test.md). **규칙을 지우는 걸 정당화하는 유일한 근거**이고, 차이가 없다는 결과 자체가 성과다(실패한 실험이 아니다). 안 그러면 규칙은 쌓이기만 한다.
+- **어휘**: 걸렸어야 할 검색이 비면 빠진 단어를 `vocab.txt` 에 넣는다. 질의에 맞추려고 옛 문서를 재태깅하지 않는다.
+- **태그**: `tags-gap.sh` 가 태그가 비어 아무도 못 찾는 문서를 목록으로 준다. **보고만 한다** — 최고 배점 필드에 들어간 엉터리 태그는 빈칸보다 나쁘다.
 - **스킬은 고정 아님**: 경로/스키마 어긋나면 참조하는 스킬을 같은 변경에서 수정.
 
 ---
@@ -113,16 +128,26 @@ frontmatter `status: completed`, 파일을 `.agent-os/prompts/tasks/completed/`�
 
 | 항목 | 설명 |
 |---|---|
-| `/agent-os:init [--eval]` | 구조 스캐폴드 |
+| `/agent-os:init [--no-eval]` | 구조 스캐폴드 |
+| `init.sh --update` | 기존 `CLAUDE.md` 의 프로토콜 구간만 갱신 |
 | `/agent-os:archive [--apply]` | 콜드 문서 아카이브(미리보기→적용) |
-| 스킬 `task-scan` | 관련 과거 태스크 + docs 라우팅 |
+| 스킬 `task-scan` | 관련 과거 작업 + 기각 이력 찾기, docs 라우팅 |
 | 스킬 `error-check` | 작업 전 과거 실수 점검 |
-| 스킬 `error-log` | 에이전트 자가 실수 기록 |
-| `CLAUDE.md` | 항상 로드되는 작업 프로토콜 |
+| 스킬 `error-log` | 자가 실수 기록(먼저 검색, 재발은 카운트) |
+| `CLAUDE.md` | 항상 로드되는 작업 프로토콜 (예산 3,000자) |
 | `.agent-os/docs/` | source of truth(실스캔으로 채움) |
+| `.agent-os/docs/07_known-risks.md` | 함정을 규칙으로. **작업 전에 읽는다** |
+| `.agent-os/docs/adr/` | 의사결정: 무엇을 기각했고 무엇이 바뀌면 다시 보나 |
+| `.agent-os/vocab.txt` | 개념 → 언어별 표기 |
 | `.agent-os/prompts/tasks/` `errors/` | 작업 메모리(frontmatter 문서) |
-| `.agent-os/prompts/index.jsonl` | 매 루프 스캔하는 생성 카탈로그 |
-| `.agent-os/scripts/agent-os-health.sh` | 인덱스 크기/콜드 수 리포트 |
+| `.agent-os/prompts/eval/eval-set.md` | 정답 있는 5문. 규칙 수명을 재는 유일한 도구 |
+| `.agent-os/prompts/index.jsonl` | 랭커가 읽는 생성 카탈로그 |
+| `rank.sh -q "..." -f "경로"` | **찾을 때 쓰는 것.** 전건이 아니라 상위 몇 건 |
+| `reindex.sh` | 인덱스 재생성 |
+| `check-prompts.sh [--report]` | frontmatter 린트. `--report` 는 실패하지 않음 |
+| `tags-gap.sh` | 태그가 비어 아무도 못 찾는 문서 |
+| `agent-os-health.sh [--oneline]` | 조용해진 것들. 읽기 전용 |
+| `bare-test.md` | 이 하네스가 아직 값을 하는가 |
 | `git config core.hooksPath .agent-os/scripts/hooks` | 강제 동기화 on |
 
 왜 이렇게 설계했는지는 [CONCEPT.ko.md](CONCEPT.ko.md) 참조.

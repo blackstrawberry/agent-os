@@ -6,30 +6,44 @@ description: Before or while working, scan .agent-os/prompts/errors frontmatter 
 # error-check
 
 <Purpose>
-Look at the error history FIRST so you do not fall into the same trap twice. Structured past mistakes are the bridge between a request and the right caution.
+Read the error history FIRST so the same trap is not sprung twice.
 </Purpose>
 
 <Use_When>
-- Just before execution (step 3 of the work protocol).
-- Especially before high-risk work: shared core, DB queries, environment-specific code, external integrations.
+Before any local or broad change. Especially shared core, DB queries, environment-specific
+code, external integrations, deploys.
 </Use_When>
 
 <Steps>
-1. Query the INDEX first: grep `.agent-os/prompts/index.jsonl` for `"k":"error"` lines and match `area` / `cat` / `summary` against the current target. Open a full error `.md` only for a strong match. If the index is missing, run `sh .agent-os/scripts/reindex.sh`, or fall back to scanning `.agent-os/prompts/errors/*.md` frontmatter. For old/rare topics, also check `.agent-os/prompts/archive/errors-*.jsonl`.
-   - By area: same `area`. By file: the file you will touch appears in some error's `files`. By type: the `category` this work tends to trigger.
-2. Read the "root cause" and "prevention" sections of any match and apply them now.
-3. If matches exist, warn briefly: "Past EXXXX in the same area -- watch out for: ...".
+0. Read `.agent-os/docs/07_known-risks.md` first — one file of rules instead of N incident
+   records. What it covers needs no further search. Its absence is itself a finding.
+
+1. Rank, do not scan:
+   ```sh
+   sh .agent-os/scripts/rank.sh -q "<what you are about to do>" -f "<paths>" -k error -n 8
+   ```
+   **Open the top 3 at most.** Do NOT grep the index for `"k":"error"` — that pulls every
+   error into context.
+   - Score 10+ = a **file hit**: a path you will touch is in that error's `files`. Act on it
+     with zero keyword matches. Filled on ~20% of docs — a miss means "no information".
+   - Do read `recof` on a hit: the earlier errors this one repeats are worth opening too.
+   - `rc` is matched, so describing the failure mode works, not just naming the component.
+   - No `rank.sh`: grep the index by `area`/`cat`/`tags`/`summary`. No index: `reindex.sh`.
+     Old topic: also `prompts/archive/errors-*.jsonl`.
+
+2. Read the root-cause and prevention sections of any match and apply them now.
+   Warn briefly: "Past EXXXX in the same area — watch out for: ...".
 </Steps>
 
 <Output>
-A short note: "Related past errors: [EXXXX -- summary -- caution]" (or "no related history"), then proceed.
+"Related past errors: [EXXXX -- summary -- caution]" — or "no related history". Then proceed.
 </Output>
 
 <Links>
-- New mistake during work -> use the `error-log` skill to record it.
-- Recurring pattern -> promote it to `.agent-os/docs/` (known-risks) or `CLAUDE.md` so it is enforced, not just remembered.
+New mistake -> `error-log`. A search that should have hit and did not -> add the missing
+word to `.agent-os/vocab.txt`.
 </Links>
 
 <Self_Maintenance>
-If the `.agent-os/prompts/errors/_TEMPLATE.md` schema changes, update this skill's matched fields in the same change.
+Sync matched field names with `prompts/errors/_TEMPLATE.md`. Budget 2000 chars.
 </Self_Maintenance>

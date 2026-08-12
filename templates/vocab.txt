@@ -1,0 +1,74 @@
+# agent-os alias map (optional, per project).
+#
+# One concept per line:   canonical: alias, alias, ...
+# When any term on a line appears in the query, every term on that line joins the
+# search. Documents are NEVER rewritten -- only the query grows, so adding a line
+# costs nothing and retagging hundreds of documents is never needed.
+#
+# A line scores ONCE per field no matter how many of its terms a document carries,
+# so a long alias list cannot inflate a match.
+#
+# Rules
+# - Only put TRANSLATIONS of the same concept on one line. Related-but-different
+#   concepts (test vs verification, auth vs authorization) belong on separate lines;
+#   merging them is how an alias map starts producing false positives.
+# - ASCII aliases shorter than 4 characters are matched at word boundaries, so "db"
+#   will not fire inside "adb". CJK terms are matched as substrings, because Japanese
+#   queries have no spaces to split on.
+# - Project nouns (a product name, a customer name, a table name) do NOT belong here.
+#   They are already unique; aliasing them only adds noise.
+#
+# Seeded from the area terms actually in use across the installs. Trim what your
+# project does not use, and add the axes it does.
+
+deploy:          배포, デプロイ, deployment, release, 릴리스, リリース, redeploy
+infra:           인프라, インフラ, infrastructure
+ops:             운영, 運用, operation, operations
+verify:          검증, 検証, verification, verify, 확인, 確認
+test:            테스트, テスト, testing, 시험
+collect:         수집, 収集, collector, collectors, collection, scraping, scraper, crawler
+schedule:        스케줄러, スケジューラ, scheduler, scheduling, 정기실행, 定期実行
+config:          설정, 設定, configuration, 환경변수, 環境変数, dotenv
+security:        보안, セキュリティ, 시큐리티
+authz:           권한, 権限, 認可, authorization, 인가, 접근제어, アクセス制御
+authn:           인증, 認証, authentication, 로그인, ログイン
+docs:            문서, ドキュメント, document, documentation, 문서생성, 資料
+design:          설계, 設計, architecture, 아키텍처, アーキテクチャ
+data-integrity:  데이터정합, データ整合, 정합성, 整合性, consistency
+report:          레포트, レポート, report, reports, reporting, 보고서, 報告書
+frontend:        프론트엔드, フロントエンド, 프론트, フロント, 화면, 画面
+backend:         백엔드, バックエンド
+render:          렌더, レンダ, render, rendering, renderer, 렌더링
+parser:          파서, パーサ, parser, parsing, 파싱
+database:        데이터베이스, データベース, database, postgres, postgresql
+cost:            과금, 課金, billing, 비용, 費用, 요금, 料金
+detect:          탐지, 検知, detection, 모니터링, モニタリング, monitoring
+procedure:       작업절차, 作業手順, procedure, workflow, 워크플로
+decision:        의사결정, 意思決定, decision
+
+# General engineering nouns. The axes above come from what the installs tag with;
+# these are the words a request is actually phrased in. A polyglot team needs both --
+# measured: axes alone fixed same-language ranking but left cross-language queries
+# missing, because a request says "memory" and "rotation", not "infra" and "ops".
+capture:         캡쳐, 캡처, キャプチャ, capture, screenshot, 스크린샷, スクリーンショット
+memory:          메모리, メモリ, memory, oom, heap, 힙
+batch:           배치, バッチ, batch, bulk, 일괄, 一括
+queue:           큐, キュー, queue, job, 잡, ジョブ
+rotation:        로테이션, ローテーション, rotation, rotate, 교체, 更新
+secret:          키, キー, key, secret, 시크릿, シークレット, credential, 자격증명, token, 토큰
+server:          서버, サーバ, サーバー, server, vps, instance, 인스턴스
+session:         세션, セッション, session
+cache:           캐시, キャッシュ, cache, 캐싱
+log:             로그, ログ, log, logging, 로깅
+notify:          알림, 通知, notification, notify, 통지
+migration:       마이그레이션, マイグレーション, migration, migrate, 이관, 移行
+retry:           재시도, リトライ, retry, 리트라이
+timeout:         타임아웃, タイムアウト, timeout, 시간초과
+column:          컬럼, カラム, column, 열, 필드, フィールド, field
+router:          라우터, ルーター, router, route, routing, 라우팅, ルーティング
+guard:           가드, ガード, guard, 방어, 보호
+canary:          카나리아, カナリア, canary
+duplicate:       중복, 重複, duplicate, dedup, 디둡
+missing:         누락, 漏れ, 欠落, missing, 빠짐
+browser:         브라우저, ブラウザ, browser, chrome, cdp, playwright
+network:         네트워크, ネットワーク, network, http, 통신, 通信

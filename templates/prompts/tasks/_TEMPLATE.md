@@ -2,7 +2,10 @@
 type: task
 id: "00"                 # 2-digit number (matches the filename)
 title: short-kebab-slug  # short identifier
-status: planned          # planned | in-progress | completed | blocked
+status: planned          # planned | in-progress | completed | blocked | superseded
+                         # Exactly one of these, nothing appended. Detail belongs in the body --
+                         # a status like "planned, waiting on approval" is not greppable, and the
+                         # linter rejects it. Note the hyphen: in-progress, not in_progress.
 created: 2025-01-01       # YYYY-MM-DD (real date)
 updated: 2025-01-01       # YYYY-MM-DD
 tags: []                 # free keywords (for search)

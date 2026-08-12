@@ -6,34 +6,45 @@ description: When the agent judges it made a mistake or error during work, self-
 # error-log
 
 <Purpose>
-Leave mistakes as a STRUCTURED pattern, not a raw log, so the next task is more accurate. The agent records its own errors without being asked.
+Mistakes as a structured pattern, not a raw log. Record your own unasked.
 </Purpose>
 
 <Use_When>
-- You discover you worked from a wrong assumption.
-- A fix broke something (regression).
-- You used the wrong file / tool / path.
-- You did, or nearly did, something risky for security or data.
-- The user points out a mistake.
+A wrong assumption, a fix that broke something, a wrong file/tool/path, a security or data
+near-miss, or the user pointing out a mistake.
+Not for a self-corrected typo that cannot recur.
 </Use_When>
 
-<Do_Not_Use_When>
-- A trivial self-corrected typo with no chance of recurrence or impact. Log only mistakes that can recur or that mattered.
-</Do_Not_Use_When>
-
 <Steps>
-1. Next id = max existing `EXXXX` in `.agent-os/prompts/errors/` + 1 (4 digits, e.g. `E0001`).
-2. Create `.agent-os/prompts/errors/EXXXX_slug.md` using `.agent-os/prompts/errors/_TEMPLATE.md`. Fill `date` (real `YYYY-MM-DD`), `task`, `severity`, `category` (assumption|tooling|logic|env|regression|security|data), `area`, `files`, `summary`, `status` (open|resolved).
-   - SECURITY: never write secret values verbatim. Point at the location ("the credential in config"), do not copy it.
-3. Body = 4 sections: what happened (quote error messages verbatim) / root cause (verified, not guessed) / how it was fixed / prevention (the lesson).
-4. Add this id to the related task's `related_errors` frontmatter.
-5. If the prevention is a general rule, promote it to `.agent-os/docs/` (known-risks) / `CLAUDE.md` / the relevant skill.
+1. **Check for a recurrence first — do not reach for an id yet.**
+   ```sh
+   sh .agent-os/scripts/rank.sh -q "<root cause in your own words>" -f "<files>" -k error -n 5
+   ```
+   Compare **root causes**, not symptoms — one cause wears many symptoms. Judge on `rc`.
+
+2. **Same root cause -> no new doc** (a second file splits one trap into apparent one-offs).
+   Update it: bump `recurrence`, `last_seen` = today, `status: open` again if it had been
+   resolved, add new paths to `files`, add a `## Recurrence history` row. Add, never overwrite.
+
+3. **Different root cause -> new doc.** Match the id convention already in the directory
+   (`E0007_slug.md` or `ERR-YYYY-MM-DD-slug.md` — do not assume). Cross-link the near-miss
+   you compared against via `related_errors` on both sides.
+   - Fill every field the template lists; its comments carry the allowed values.
+     **Enums: exactly one word, nothing appended** — the linter rejects the rest.
+     `tags` 3-8 words the next person will type hitting this same wall.
+     Never write secret values — point at the location.
+
+4. Body: what happened (quote messages verbatim) / root cause (verified) / fix / prevention /
+   recurrence history. Add the id to the related task's `related_errors`.
+
+5. **At `recurrence` 3+, editing the doc is not a response.** Promote it to
+   `docs/07_known-risks.md`, or open a task for a mechanical gate (hook, lint, test).
 </Steps>
 
 <Output>
-Report the created path plus a one-line lesson.
+New: path + one-line lesson. Recurrence: which doc, to what count, and at 3+ which escalation.
 </Output>
 
 <Self_Maintenance>
-If the frontmatter schema changes, keep this skill and `.agent-os/prompts/errors/_TEMPLATE.md` in sync.
+Sync with `prompts/errors/_TEMPLATE.md`. Budget 2000 chars.
 </Self_Maintenance>

@@ -6,31 +6,43 @@ description: On a new request, scan .agent-os/prompts/tasks (and completed) fron
 # task-scan
 
 <Purpose>
-The front-desk router of agent-os. Connect a new request to existing context BEFORE touching code: find prior tasks and the source-of-truth docs that matter, so the work does not drift. All agent-os files live under `.agent-os/`.
+Connect a request to existing context BEFORE touching code.
 </Purpose>
 
 <Use_When>
-- A new request arrives (step 1 of the work protocol).
-- Creating a new task doc, or changing a task's status.
-- The user asks whether similar work was done before, or to find related tasks.
+Broad work (many files, design change, new feature); creating a task doc or changing its
+status; "did we do this before?".
+Not for trivial or local work — a one-file bug fix needs `error-check`, not this.
 </Use_When>
 
-<Do_Not_Use_When>
-- The change is a trivial one-off with no need for an audit trail.
-</Do_Not_Use_When>
-
 <Steps>
-1. Query the INDEX, not every file: grep `.agent-os/prompts/index.jsonl` (one compact JSON line per task/error: `id/status/area/tags/summary/path/refs`). Match request keywords against the line. This keeps the scan O(1 file) and loads no bodies. If the index is missing or stale, run `sh .agent-os/scripts/reindex.sh` first; if there is no index at all, fall back to globbing `.agent-os/prompts/tasks/**/*.md` frontmatter.
-2. Open a full `.md` body only for a strong match, then follow its `related_docs` / `related_errors`. If the index yields nothing and the topic may be old, also scan `.agent-os/prompts/archive/*.jsonl` (cold storage).
-3. Read the relevant source of truth in `.agent-os/docs/` (use the `.agent-os/docs/README.md` index to pick by area).
-4. New task -> create `.agent-os/prompts/tasks/NN_slug.md` (2-digit `NN`, kebab-case slug) using `.agent-os/prompts/tasks/_TEMPLATE.md`. Dates are real `YYYY-MM-DD`. Start at `status: planned`, move to `in-progress` when work begins.
-5. On completion -> set `status: completed`, update `updated`, move the file to `.agent-os/prompts/tasks/completed/`, and fill `related_docs` / `related_errors`.
+1. Rank, do not scan:
+   ```sh
+   sh .agent-os/scripts/rank.sh -q "<words from the request>" -f "<paths you will touch>" -n 8
+   ```
+   `SCORE<TAB><index line>`, best first. **Open the top 3 at most.**
+   - Score 10+ = a **file hit**: a path you will touch is in that doc's `files`. Read it even
+     with no keyword match. Pass real paths to `-f`; that is what beats grep.
+   - No `rank.sh` or non-zero exit: grep the index. No index: `reindex.sh`.
+
+2. A decision record (`"k":"adr"`) in the results: **read it before proposing anything.**
+   Check its *Revisit when* — condition met, say so and proceed; not met, it stands.
+
+3. Read `.agent-os/docs/` — `07_known-risks.md` first. Follow a match's `related_docs` /
+   `related_errors`. Old topic: also `prompts/archive/*.jsonl`.
+
+4. New task -> `prompts/tasks/NN_slug.md` from `_TEMPLATE.md`. Real dates, `status: planned`.
+   **`tags` is not optional** — 3-8 words *you would search for months from now*, not words
+   already in the title. Include one canonical term from `.agent-os/vocab.txt` when one fits.
+
+5. Done -> `status: completed`, update `updated`, move to `tasks/completed/`, fill
+   `related_docs` / `related_errors`.
 </Steps>
 
 <Output>
-A short note before starting: "Related tasks: [path -- summary]; docs to read: [path]" (or "no related tasks").
+"Related: [path -- summary]; docs to read: [path]" — or "no related tasks".
 </Output>
 
 <Self_Maintenance>
-If the `.agent-os/prompts/` layout or the `_TEMPLATE.md` schema changes, update this skill's paths and field names in the same change. Every skill is subject to change.
+Sync paths and field names with `.agent-os/prompts/` and the templates. Budget 2000 chars.
 </Self_Maintenance>
