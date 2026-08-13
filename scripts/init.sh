@@ -82,6 +82,7 @@ copy "$SCRIPT_DIR/tags-gap.sh"           "$AOS/scripts/tags-gap.sh"
 copy "$SCRIPT_DIR/bare-test.md"          "$AOS/scripts/bare-test.md"
 copy "$SCRIPT_DIR/agent-os-compact.sh"   "$AOS/scripts/agent-os-compact.sh"
 copy "$SCRIPT_DIR/agent-os-health.sh"    "$AOS/scripts/agent-os-health.sh"
+copy "$SCRIPT_DIR/portability-test.sh"   "$AOS/scripts/portability-test.sh"
 copy "$SCRIPT_DIR/pre-commit"            "$AOS/scripts/hooks/pre-commit"
 chmod +x "$AOS"/scripts/*.sh "$AOS"/scripts/hooks/pre-commit 2>/dev/null || true
 
@@ -110,6 +111,8 @@ sh "$AOS/scripts/reindex.sh" >/dev/null 2>&1 && echo "CREATE $AOS/prompts/index.
 echo ""
 echo "Done. Next:"
 echo "  1) enable the forced-sync hook: git config core.hooksPath $AOS/scripts/hooks"
+echo "     then confirm it can actually run: sh $AOS/scripts/portability-test.sh"
+echo "     (git refuses a hook without the exec bit, and says so only in a passing hint)"
 echo "  2) fill $AOS/docs/ with this project's source of truth (initial full scan)"
 echo "  3) fill $AOS/prompts/eval/eval-set.md -- 5 rows, from what has actually bitten"
 echo "     this project. It is the ONLY way to tell later whether a rule still earns its"
