@@ -2,136 +2,155 @@
 
 **Languages:** English | [한국어](GUIDE.ko.md) | [日本語](GUIDE.ja.md)
 
-agent-os is not a one-shot tool. It is a **human-in-the-loop cycle**: you set it up once, then every request flows through the same loop so the agent stays on-intent and the project's knowledge compounds instead of rotting.
+Set it up once. After that you talk normally, and the project's knowledge grows instead of
+rotting. This guide is *what to do*; [CONCEPT.md](CONCEPT.md) is *why it is built this way*.
+
+---
+
+## 1. Setup (once per project)
 
 ```
-                          ┌──────────────────────────────────────────────┐
-                          v                                              │
-  SETUP (once) ──>  1.FRAME ──> 2.REVIEW PLAN ──> 3.EXECUTE ──> 4.REVIEW ─┘
-                    (task)       (human gate)      (agent)      RESULT
-                                                              5.SELF-IMPROVE
-                                                                 + SYNC
-                                                              6.CLOSE task
-                                                              7.MAINTAIN
-                                                                (compact)
-  legend:  human = you set direction & approve;  agent = does the work
+/plugin marketplace add /path/to/agent-os-plugin
+/plugin install agent-os@agent-os
+/agent-os:init                 # --no-eval skips the eval set
 ```
 
----
+Already scaffolded? `sh <plugin>/scripts/init.sh --update .` refreshes only the protocol block
+in your `CLAUDE.md` and leaves everything outside the markers alone.
 
-## 0. Setup (once per project)
+Then, in order of how much damage skipping them does:
 
-1. **Install** the plugin:
-   ```
-   /plugin marketplace add /path/to/agent-os-plugin
-   /plugin install agent-os@agent-os
-   ```
-2. **Scaffold** the structure into the repo: `/agent-os:init` (the eval set is included; `--no-eval` skips it). Already have agent-os? `sh <plugin>/scripts/init.sh --update .` refreshes only the protocol block in your `CLAUDE.md` and leaves everything outside the markers alone.
-3. **Enable forced sync** (recommended): `git config core.hooksPath .agent-os/scripts/hooks`.
-4. **Build the Source of Truth** — the most important step. Ask the agent to scan the whole repo and fill `.agent-os/docs/01..07` (overview, architecture, directory map, core, data layer, conventions, known risks). **You review it once.** Everything downstream trusts `.agent-os/docs/`, so a wrong doc here poisons later work. Write only verified facts.
-5. **Fill the eval set** — five rows in `.agent-os/prompts/eval/eval-set.md`, taken from what has actually bitten this project. Skipping this is the common failure: measured across 19 installs, 17 never filled it in, and without it you can never tell whether a rule is still earning its place.
-6. **Trim `.agent-os/vocab.txt`** to the axes this project uses, and add its own. This is what lets a question in one language reach documents written in another.
-
-After this, the project has: `CLAUDE.md` (the protocol), `.agent-os/docs/` (truth), `.agent-os/prompts/` (memory), `vocab.txt` (the alias map), the skills, and the hook.
-
----
-
-## 1. The cycle (per request)
-
-Roles: **[H]** = you (human), **[A]** = the agent.
-
-### Step 0 — Size it  [A]
-Not every request deserves the whole loop. **Trivial** (a commit, one command, a one-line answer) is answered directly. **Local** (one file, a clear bug) needs only `error-check`. Only **broad** work — many files, a design change, a new feature — runs steps 1 to 6. The old binary sent every medium job through the full course, which is how a protocol earns a reputation for being slow.
-
-### Step 1 — Frame the task  [H states -> A writes]
-You state the request in plain language. The agent then:
-- runs **task-scan**, which *ranks* rather than scans: `rank.sh` scores every index entry and the agent opens the top 3. Passing the paths it is about to touch (`-f`) surfaces a past error about one of them even with no keyword match,
-- reads a **decision record** first if one comes back — someone already rejected an option here, and its *Revisit when* says whether that still holds,
-- reads the relevant **`.agent-os/docs/`**, starting with `07_known-risks.md`,
-- runs **error-check** (did we trip on this before?),
-- writes `.agent-os/prompts/tasks/NN_slug.md` with **Request / Scope-non-scope / Plan** filled in — `tags` included, because an untagged document is one the ranker cannot find later.
-
-### Step 2 — Review the plan  [H GATE]
-Read the task doc's **Scope** and **Plan**. This is the cheapest place to fix misunderstanding. Correct the scope, reject bad assumptions, or approve. Do not let execution start on a wrong frame.
-
-### Step 3 — Execute  [A]
-The agent implements per the plan, recording decisions and touched files in the **Work log**. It runs **error-check** again before risky steps (shared core, DB, migrations) and verifies its own work (build/lint/tests).
-
-### Step 4 — Review the result  [H GATE]
-Read the **Verification** section and the diff. Accept, or send it back with feedback. For anything irreversible or outward-facing (deploys, deletions, credentials, external calls) the agent must stop and ask here regardless.
-
-### Step 5 — Self-improve + sync  [A]
-Before closing, the agent:
-- updates **`.agent-os/docs/`** for any changed behavior/structure (Source-of-Truth sync — the hook warns if code changed without docs),
-- if a procedure recurred, proposes a **new skill** or updates an existing one,
-- if it made a mistake, runs **error-log** — which searches *before* filing. The same root cause bumps the existing document's `recurrence` and `last_seen` instead of opening a second one; two files for one trap make a three-time trap look like three one-offs.
-- **at `recurrence` 3, editing the document is no longer an acceptable response.** Three repeats are evidence that prose does not prevent this. The lesson is promoted to `.agent-os/docs/07_known-risks.md`, or a task is opened for a mechanical gate — a hook, a lint rule, a test.
-- if an alternative was seriously considered and dropped, and reversing would be expensive, writes a **decision record** in `.agent-os/docs/adr/` — with what was rejected and what would reopen it.
-
-This is what makes the system get *better* each loop instead of just bigger.
-
-### Step 6 — Close the task  [A]
-Set frontmatter `status: completed`, move the file to `.agent-os/prompts/tasks/completed/`, fill `related_docs`/`related_errors`. The index refreshes; commit (the pre-commit hook lints frontmatter and warns on missing doc sync).
-
-### Step 7 — Maintain  [H when nudged]
-`agent-os-health.sh` is what breaks the silence. It reports an index older than the documents it catalogues, open tasks nobody has touched in 30 days, over-pinning (`pin` means load-bearing forever, not important — over-pin and cold detection stops working at all), repeats that never became rules, an empty eval set, and a protocol block that has outgrown its budget. It is **read-only**: it tells you to reindex, it never does it.
-
-When it says memory is large, run **`/agent-os:archive`** (it previews cold docs, then archives on your OK). Cold = finished AND unreferenced AND unpinned AND old — never by age alone. **Promote the lesson to known-risks first**: archive an un-promoted lesson and it is gone; keep everything instead and the index grows until nobody scans it. Promotion is the only exit.
-
-Then the next request starts the loop again.
+1. **Build the source of truth.** Have the agent scan the whole repo and fill
+   `.agent-os/docs/01..07` (overview, architecture, directory map, core, data layer,
+   conventions, known risks). **Read it once yourself** — everything downstream trusts these
+   files, so a wrong fact here quietly poisons every later task. Verified facts only.
+2. **Fill the eval set** — five rows in `.agent-os/prompts/eval/eval-set.md`, from what has
+   actually bitten *this* project. Across 19 installs, 17 never did. It is the only instrument
+   that can later tell you whether a rule still earns its place.
+3. **Turn on the hook**: `git config core.hooksPath .agent-os/scripts/hooks`, then
+   `sh .agent-os/scripts/portability-test.sh` to confirm it can run — git refuses a hook
+   without the exec bit and says so only in a hint that scrolls past.
+4. **Trim `.agent-os/vocab.txt`** to the words this project uses. This is what lets a question
+   in one language reach a document written in another.
 
 ---
 
-## 2. Human-in-the-loop checkpoints
+## 2. A day with agent-os
 
-You must be in the loop at these points; the rest is the agent's to run:
+Nothing below is a command. You talk; the skills fire on what you said.
 
-| When | Why |
+**You:** *"the detail page shows a different buy/sell status than the list page — make them match"*
+
+Before touching anything the agent ranks what the project already knows: `task-scan` opens the
+top 3 index hits, `error-check` surfaces traps recorded against the files it is about to edit,
+and it reads `.agent-os/docs/`, `07_known-risks.md` first. A decision record outranks all of
+it — someone already rejected an option here, and its *Revisit when* says if that still holds.
+
+**You:** *"write it up as a task first"*
+
+```
+.agent-os/prompts/tasks/04_buysell-detail-status-mismatch.md
+  status: planned      Request / Scope · non-scope / Plan filled in
+```
+
+You never type frontmatter: the skill numbers the file, copies the template, sets dates and
+`status`, and writes `tags` — untagged means the ranker cannot find it later.
+
+> ### ▸ Gate 1 — you read the Scope and the Plan
+> The cheapest place to fix a misunderstanding. Correct the scope, reject a wrong assumption,
+> or say go. Execution on a wrong frame is the expensive mistake.
+
+**You:** *"go ahead"*
+
+The agent implements, recording decisions and touched files in the **Work log**, re-running
+`error-check` before risky steps (shared core, DB, migrations), and verifying its own work.
+
+> ### ▸ Gate 2 — you read the Verification section and the diff
+> Accept, or send it back. Anything irreversible or outward-facing — deploys, deletions,
+> credentials, external calls — stops here and asks you, every time.
+
+**You:** *"close it out"*
+
+The agent syncs what it learned before closing: `.agent-os/docs/` for changed behaviour, an
+`error-log` if it slipped (searching first, so a repeat bumps an existing document's
+`recurrence` rather than opening a second one), a decision record if a real alternative was
+dropped and reversing would be expensive. Then `status: completed`, the file moves to
+`completed/`, and the pre-commit hook lints what you commit.
+
+**The request did not just get done — the source of truth grew.** The next task starts from
+more than this one did.
+
+---
+
+## 3. What you say, and what runs
+
+| Say something like | What runs | Why it fires |
+|---|---|---|
+| "write this up as a task" | `task-scan` | it covers *creating* task docs, not only finding them |
+| "have we done this before?" | `task-scan` | related prior work first, so you don't redo it |
+| "log that mistake" | `error-log` | also fires on its own when the agent judges it slipped |
+| "have I hit this before?" | `error-check` | and automatically before editing or debugging |
+| "clean up the memory" | `/agent-os:archive` | previews cold docs, archives on your OK |
+
+Work is **sized, not marched through**. Trivial (a commit, one command, a one-line answer) is
+answered directly. Local (one file, a clear bug) needs only `error-check`. Only broad work —
+many files, a design change, a new feature — runs the full day above.
+
+Searching is ranked, never grepped:
+
+```sh
+sh .agent-os/scripts/rank.sh -q "<words>" -f "<paths you will touch>" -n 8
+```
+
+`-f` is the strongest signal — a past error about a file you are about to touch surfaces with
+zero keyword overlap. Ask in any language. A search that *should* have hit and didn't means a
+missing line in `vocab.txt`; add it there rather than retagging old documents.
+
+---
+
+## 4. Where you stay in the loop
+
+The two gates above, plus three things the agent never decides alone: **irreversible or
+outward-facing actions** (deploys, deletions, credentials, external calls), **security
+decisions** (credential rotation, exposed tools), and **what leaves the active set** when
+archiving. Signing off the source of truth at setup is the fourth, and the one everything
+else rests on. The rest is the agent's to run.
+
+---
+
+## 5. When a warning appears
+
+`agent-os-health.sh` is what breaks the silence. It is **read-only** — it tells you, it never
+acts. Run it when you feel like it; it costs a second.
+
+| It says | Do this |
 |---|---|
-| Initial `.agent-os/docs/` sign-off (setup) | Everything trusts the source of truth |
-| Plan review (step 2) | Fix misframing before it costs work |
-| Result review (step 4) | Catch wrong/incomplete output |
-| Irreversible / outward actions | Deploys, deletes, credentials, external services |
-| Compaction apply (step 7) | Confirm what leaves the active set |
-| Security decisions | e.g. credential rotation, exposed tools |
+| docs newer than the index | `sh .agent-os/scripts/reindex.sh` — every scan is reading a stale catalog |
+| index over budget / cold docs | `/agent-os:archive` — previews first. **Promote the lesson to known-risks before archiving**; archive an unpromoted lesson and it is gone |
+| errors at `recurrence` 3+ not in known-risks | Three repeats prove prose does not prevent this. Promote it, or open a task for a mechanical gate — a hook, a lint rule, a test |
+| error docs but no `07_known-risks.md` | Nothing has become a rule yet. The errors are memory; the rules are what stop repeats |
+| open tasks untouched 30+ days | Close them, or write down why they are blocked |
+| pinned over the threshold | `pin` means load-bearing forever, not important. Over-pin and cold detection stops working at all |
+| eval set still the shipped file | Fill the five rows. Without it, adding *and* removing rules are both guesses |
+| injected text over budget | Replace, never append — rationale belongs in `.agent-os/docs/`, not in a prompt read every session |
+
+Two more, on your own schedule. **`tags-gap.sh`** lists documents nothing can find because
+their tags are empty; it only reports, since a wrong tag in the highest-weighted field is
+worse than a gap. **`bare-test.md`**, once per model generation, runs the eval set with the
+protocol block commented out and then with it on. That comparison is the only thing that ever
+justifies *deleting* a rule — and no difference is the finding, not a failed experiment.
+Without it, rules only ever accumulate.
 
 ---
 
-## 3. Worked example (real)
-
-Request: *"the club detail page shows different buy/sell status than the list page; make them match."*
-
-1. **Frame**: `task-scan` finds no prior task; agent reads `.agent-os/docs/` for the list module; `error-check` clean. Writes `.agent-os/prompts/tasks/04_buysell-detail-status-mismatch.md` with root-cause analysis in the Plan.
-2. **Review plan** [H]: you confirm the root cause (detail's row-selection omits the status field) and scope (PC + mobile twin).
-3. **Execute** [A]: edits both files; `php -l` + a logic simulation prove old vs new behavior.
-4. **Review result** [H]: live render verification is environment-gated, so it is flagged as pending; you decide.
-5. **Self-improve + sync** [A]: writes `.agent-os/docs/08_list-module.md` (new module doc) + updates the data-layer doc; notes the legacy trap.
-6. **Close**: task moves to `completed/` (or stays `in-progress` until live-verified).
-
-The point: the request did not just get "done" — the codebase's source of truth grew, and the next person/agent inherits it.
-
----
-
-## 4. Maintenance cadence
-
-- **Docs sync**: every behavior/structure change, in the same task. Enforced by the pre-commit warning.
-- **Compaction**: when nudged (index size / cold count vs thresholds). Roll recurring error lessons into `.agent-os/docs/` *before* archiving.
-- **Eval**: after editing skills/docs, run the `.agent-os/prompts/eval` questions to confirm the agent still answers the project's traps correctly.
-- **Bare test** (once per model generation): run the eval set with the protocol block commented out, then with it on, and compare. See [`scripts/bare-test.md`](../scripts/bare-test.md). This is the only thing that ever justifies *deleting* a rule — and a no-difference result is the finding, not a failed experiment. Rules only accumulate otherwise.
-- **Vocabulary**: when a search that should have hit comes back empty, add the missing word to `vocab.txt`. Never retag old documents to match a query.
-- **Tags**: `tags-gap.sh` lists documents nothing can find because their tags are empty. It only reports — a wrong tag in the highest-weighted field is worse than a gap.
-- **Skills are not frozen**: when a path/schema drifts, fix the skill that references it in the same change.
-
----
-
-## 5. Cheatsheet
+## 6. Cheatsheet
 
 | Thing | What it is |
 |---|---|
 | `/agent-os:init [--no-eval]` | scaffold the structure into a project |
 | `init.sh --update` | refresh only the protocol block in an existing `CLAUDE.md` |
 | `/agent-os:archive [--apply]` | archive cold docs (preview, then apply) |
-| skill `task-scan` | find related prior work + rejected decisions, route to docs |
+| skill `task-scan` | find related prior work + rejected decisions; also writes new task docs |
 | skill `error-check` | check past mistakes before working |
 | skill `error-log` | the agent records its own mistakes (search first, count recurrences) |
 | `CLAUDE.md` | the always-loaded work protocol (budget: 3000 chars) |
@@ -151,12 +170,11 @@ The point: the request did not just get "done" — the codebase's source of trut
 | `bare-test.md` | is this harness still earning its place? |
 | `git config core.hooksPath .agent-os/scripts/hooks` | turn on forced sync |
 
-**On a new machine, run `portability-test.sh` first.** Two clone-local things no
-checkout carries: `core.hooksPath` is unset, so the commit gate is off, and git will
-refuse a hook that lost its exec bit — on macOS and Linux, silently. It also checks
-the places where implementations disagree: macOS `awk` counts `length()` in bytes
-where GNU `awk` counts characters, and glob order follows `LC_COLLATE`, so an index
-built in two locales holds the same entries in a different order. Every script pins
-`LC_ALL=C` for that reason; the test is what keeps it true.
+**On a new machine, run `portability-test.sh` first.** Two clone-local things no checkout
+carries: `core.hooksPath` is unset, so the commit gate is off, and git refuses a hook that lost
+its exec bit — on macOS and Linux, silently. It also checks where implementations disagree:
+macOS `awk` counts `length()` in bytes where GNU `awk` counts characters, and glob order
+follows `LC_COLLATE`, so an index built in two locales holds the same entries in a different
+order. Every script pins `LC_ALL=C` for that reason; this test is what keeps it true.
 
 See [CONCEPT.md](CONCEPT.md) for *why* it is built this way.
