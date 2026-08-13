@@ -61,6 +61,43 @@ After scaffolding:
 3. Fill `.agent-os/prompts/eval/eval-set.md` — five rows, from what has actually bitten this project. It is the only instrument that can tell you later whether a rule still earns its place; without it, adding *and* removing rules are both guesses
 4. Work is sized, not marched through: **trivial** goes straight to the answer, **local** needs only `error-check`, **broad** takes the full loop
 
+## Day to day
+
+**There is no command for the daily loop — you just talk.** `init` and `archive` are the
+only two slash commands. Everything else runs on the three skills, whose descriptions *are*
+their trigger conditions, so the agent invokes them from a plain sentence.
+
+| Say something like | What runs | Why it fires |
+|---|---|---|
+| "write this up as a task" | `task-scan` | it covers *creating* task docs, not just finding them |
+| "have we done this before?" | `task-scan` | matches related prior work first, so you don't redo it |
+| "log that mistake" | `error-log` | also fires on its own when the agent judges it slipped |
+| "have I hit this before?" | `error-check` | and automatically before editing or debugging |
+
+**You never hand-write frontmatter.** The skills number the file, copy `_TEMPLATE.md`, and
+fill `status`/dates. A new task lands as `.agent-os/prompts/tasks/NN_slug.md`,
+`status: planned`.
+
+A broad change, end to end:
+
+```
+"add SSO to the login flow"
+   -> task-scan finds prior auth work and the docs that own it; error-check
+      surfaces traps recorded against the files you are about to touch
+"write it up as a task first"        -> NN_sso_login.md, status: planned
+        ... you build, the agent records what bit it as it goes ...
+"close it out"                       -> status: completed, moved to completed/,
+                                        docs updated in the same change
+```
+
+The pre-commit hook checks the mechanical part. `agent-os-health.sh` tells you what has gone
+quiet. Neither decides anything for you.
+
+**What stays yours.** The skills route and format; they do not judge. Filling `.agent-os/docs/`
+from a real scan, deciding which lesson becomes a rule in `07_known-risks.md`, calling a change
+broad, and approving that it is done — all still yours. This is a scaffold that keeps you in
+the loop, not an autopilot.
+
 ## Tuning
 
 Thresholds are derived from your context window, not hardcoded. Set `AGENT_OS_CONTEXT_TOKENS` to your model's window; `AGENT_OS_MAX_ACTIVE` (default `CONTEXT_TOKENS/1000`) and `AGENT_OS_COMPACT_NUDGE` (default `MAX/4`) scale from it. See [docs/CONCEPT.md](docs/CONCEPT.md#scaling-keeping-memory-cheap) for the math.

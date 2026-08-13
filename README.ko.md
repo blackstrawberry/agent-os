@@ -49,6 +49,42 @@ GitHub 푸시 후: `/plugin marketplace add <owner>/<repo>`
 3. `.agent-os/prompts/eval/eval-set.md` 5행 작성 — **이 프로젝트가 실제로 물린 것**으로. 나중에 「이 규칙이 아직 값을 하는가」를 물을 수 있는 유일한 도구다. 이게 없으면 규칙을 **더하는 것도 빼는 것도** 근거 없는 추측이 된다
 4. 작업은 순서를 행진하는 게 아니라 **크기를 판정**한다: **trivial** 은 바로 답, **국소**는 `error-check` 만, **광역**만 풀 루프
 
+## 일상 운영
+
+**매일 쓰는 루프에는 명령어가 없다 — 그냥 말하면 된다.** 슬래시 명령은 `init` 과 `archive`
+둘뿐이고, 나머지는 스킬 3종이 받는다. 스킬의 description 이 곧 **발동 조건**이라 평범한
+문장 하나로 에이전트가 알아서 호출한다.
+
+| 이렇게 말하면 | 뜨는 것 | 왜 걸리나 |
+|---|---|---|
+| "이거 태스크로 정리해줘" | `task-scan` | 찾기뿐 아니라 태스크 문서 **작성**까지 이 스킬 담당 |
+| "이거 전에 해봤나?" | `task-scan` | 관련 선행 작업을 먼저 물어 재작업을 막는다 |
+| "방금 실수 기록해줘" | `error-log` | 시키지 않아도 에이전트가 스스로 실수를 인지하면 발동 |
+| "이런 실수 전에도 했나?" | `error-check` | 코드 수정·디버깅 직전에도 자동으로 |
+
+**frontmatter 를 손으로 쓸 일은 없다.** 번호 채번, `_TEMPLATE.md` 복사, `status`·날짜 기입까지
+스킬이 한다. 새 태스크는 `.agent-os/prompts/tasks/NN_slug.md`, `status: planned` 로 생긴다.
+
+광역 작업 한 컷:
+
+```
+"로그인에 SSO 붙여줘"
+   -> task-scan 이 과거 인증 작업과 그걸 소유한 문서를 찾고, error-check 가
+      지금 만질 파일에 걸린 함정을 올려준다
+"태스크부터 만들어줘"          -> NN_sso_login.md, status: planned
+        ... 작업하는 동안 물린 것은 그때그때 기록된다 ...
+"이거 종료 처리해줘"           -> status: completed, completed/ 로 이동,
+                                 docs 는 같은 변경에서 갱신
+```
+
+기계적인 부분은 pre-commit 훅이 본다. 조용해진 것은 `agent-os-health.sh` 가 말해준다.
+**둘 다 대신 판단하지는 않는다.**
+
+**사람이 계속 하는 일.** 스킬은 라우팅과 서식을 맡지 판단을 대신하지 않는다. 실스캔으로
+`.agent-os/docs/` 채우기, 어떤 교훈이 `07_known-risks.md` 의 규칙이 될지 정하기, 이 변경이
+광역인지 판정하기, 끝났다고 승인하기 — 전부 사람 몫이다. 자동조종이 아니라 **사람을 루프
+안에 붙들어 두는 골조**다.
+
 ## 튜닝
 임계값은 하드코딩이 아니라 **컨텍스트 윈도우에서 도출**. `AGENT_OS_CONTEXT_TOKENS`를 모델 윈도우로 지정하면 `AGENT_OS_MAX_ACTIVE`(기본 `CONTEXT_TOKENS/1000`)·`AGENT_OS_COMPACT_NUDGE`(기본 `MAX/4`)가 따라 스케일. 근거는 [docs/CONCEPT.ko.md](docs/CONCEPT.ko.md) 참조.
 
