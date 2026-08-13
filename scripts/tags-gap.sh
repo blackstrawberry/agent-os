@@ -12,6 +12,10 @@
 # tag in the top-weighted field pollutes every future search, which is worse than a
 # gap that shows up here.
 
+# See reindex.sh: awk byte-vs-character semantics and LC_COLLATE glob order both vary
+# by locale, silently. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2

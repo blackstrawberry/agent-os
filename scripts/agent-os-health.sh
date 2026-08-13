@@ -16,6 +16,12 @@
 #   AGENT_OS_PIN_MAX_PCT      default 30    (pin means load-bearing, not important)
 #   AGENT_OS_AREA_RISK_MIN    default 3     (errors in one area before known-risks should cover it)
 
+# See reindex.sh: awk byte-vs-character semantics and LC_COLLATE glob order both vary
+# by locale, silently. The inline LC_ALL=C on the budget counters below predates this
+# and is now redundant; it is left in place because uchars() is only valid under C and
+# the comment there is where a reader looks. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2
@@ -78,15 +84,23 @@ CLAUDE_MAX=${AGENT_OS_CLAUDE_MAX_CHARS:-3000}
 SKILL_MAX=${AGENT_OS_SKILL_MAX_CHARS:-2000}
 overbudget=""
 if [ -f CLAUDE.md ]; then
-  csz=$(awk '/<!-- agent-os:begin -->/,/<!-- agent-os:end -->/' CLAUDE.md | wc -m)
-  csz=$(printf '%s' "$csz" | tr -d ' ')
+  # Counted in awk, not `wc -m`: macOS wc -m counts BYTES under LC_ALL=C and
+  # CHARACTERS under a UTF-8 locale, so the same file scored differently depending on
+  # the caller's shell. Pinning LC_ALL=C and subtracting UTF-8 continuation bytes
+  # gives one answer everywhere -- and drops a wc and a tr. See task 14.
+  csz=$(LC_ALL=C awk '
+    function uchars(s,   c) { c = s; gsub(/[\200-\277]/, "", c); return length(c) }
+    /<!-- agent-os:begin -->/,/<!-- agent-os:end -->/ { n += uchars($0) + 1 }
+    END { print n+0 }' CLAUDE.md)
   [ "$csz" -gt "$CLAUDE_MAX" ] && overbudget="$overbudget CLAUDE.md agent-os block ${csz}/${CLAUDE_MAX};"
 fi
 for sk in "$AOS"/skills/*/SKILL.md .claude/skills/*/SKILL.md; do
   [ -e "$sk" ] || continue
   # body only: the frontmatter description is how the skill gets routed, not prose
-  bsz=$(awk 'BEGIN{c=0} /^---$/{c++; next} c>=2{print}' "$sk" | wc -m)
-  bsz=$(printf '%s' "$bsz" | tr -d ' ')
+  bsz=$(LC_ALL=C awk '
+    function uchars(s,   c) { c = s; gsub(/[\200-\277]/, "", c); return length(c) }
+    BEGIN { c = 0 } /^---$/ { c++; next } c >= 2 { n += uchars($0) + 1 }
+    END { print n+0 }' "$sk")
   [ "$bsz" -gt "$SKILL_MAX" ] && overbudget="$overbudget $sk body ${bsz}/${SKILL_MAX};"
 done
 

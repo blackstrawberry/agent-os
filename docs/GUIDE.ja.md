@@ -147,7 +147,15 @@ frontmatter `status: completed`、ファイルを `.agent-os/prompts/tasks/compl
 | `check-prompts.sh [--report]` | frontmatter lint。`--report` は失敗しない |
 | `tags-gap.sh` | タグ空で誰にも見つけられない文書 |
 | `agent-os-health.sh [--oneline]` | 静かになったもの。読み取り専用 |
+| `portability-test.sh [-v]` | どのマシンでも同じ答えが出るか。新しいマシンではまずこれ |
 | `bare-test.md` | このハーネスはまだ価値を出しているか |
 | `git config core.hooksPath .agent-os/scripts/hooks` | 強制同期 on |
+
+**新しいマシンでは `portability-test.sh` を最初に走らせる。** チェックアウトが運ばない
+クローンローカルの設定が二つある — `core.hooksPath` は未設定でコミットゲートが効かず、実行
+権限を失ったフックは git が拒否する(macOS・Linux では**黙って**)。実装が割れる箇所も併せて
+見る。macOS の `awk` は `length()` をバイトで数え、GNU `awk` は文字で数える。glob の順序は
+`LC_COLLATE` に従うため、同じインデックスがロケールごとに**順序だけ**変わる。全スクリプトが
+`LC_ALL=C` を固定しているのはそのためで、それが保たれているかを確かめるのがこのテストだ。
 
 なぜこの設計かは [CONCEPT.ja.md](CONCEPT.ja.md) を参照。

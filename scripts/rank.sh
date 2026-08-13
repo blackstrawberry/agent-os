@@ -26,6 +26,12 @@
 # editing has to surface even when no keyword matched. It only reaches about 20% of
 # documents (files is that sparsely filled), so a miss means no information.
 
+# See reindex.sh: awk byte-vs-character semantics and LC_COLLATE glob order both vary
+# by locale, silently. The inline LC_ALL=C on the awk call below predates this and is
+# now redundant; it stays because uchars() is only valid under C and that is where a
+# reader looks for the reason. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2
@@ -63,7 +69,23 @@ D30=$(ago 30); D180=$(ago 180)
 VOCAB="$AOS/vocab.txt"
 [ -f "$VOCAB" ] || VOCAB=""
 
-awk -v query="$Q" -v filt="$FILT" -v kindf="$KIND" -v d30="$D30" -v d180="$D180" -v vocab="$VOCAB" '
+# LC_ALL=C pins awk to byte semantics on EVERY platform. Without it macOS awk
+# (one-true-awk) counts length()/substr() in bytes while GNU awk in a UTF-8 locale
+# counts characters, so the destem guard below fired on Linux/Windows and never on
+# macOS -- the same query stemmed differently per machine. Byte semantics everywhere
+# is the only setting both implementations agree on. tolower() becomes ASCII-only
+# (Korean and Japanese have no case, so nothing is lost) and the bracket ranges in
+# termhit() become plain byte ranges. See task 14.
+LC_ALL=C awk -v query="$Q" -v filt="$FILT" -v kindf="$KIND" -v d30="$D30" -v d180="$D180" -v vocab="$VOCAB" '
+function uchars(s,   c) {
+  # Character count of a UTF-8 string under byte semantics: every continuation byte
+  # is 10xxxxxx (\200-\277), so dropping them leaves exactly one byte per character.
+  # Only safe under LC_ALL=C -- a UTF-8-locale BSD awk dies with "towc: multibyte
+  # conversion failure" the moment a regex touches a lone continuation byte.
+  c = s
+  gsub(/[\200-\277]/, "", c)
+  return length(c)
+}
 function clearF(   i) {
   for (i in F) delete F[i]
 }
@@ -153,7 +175,11 @@ function destem(w) {
   # Applied to QUERY WORDS ONLY; the index keeps whatever the document wrote.
   # Cross-language vocabulary (a Korean query against Japanese or English tags) is a
   # different problem and is task 05, not this.
-  if (length(w) < 3) return w
+  #
+  # uchars(), not length(): a Korean syllable is 3 bytes, so under byte semantics
+  # length() never drops below 3 and this guard never fired on macOS -- "결과" was
+  # stemmed to "결", "나" to the empty string. Task 14.
+  if (uchars(w) < 3) return w
   sub(/(으로서|으로써|에서는|에게서|이라고|라고|으로|에서|에게|부터|까지|처럼|만큼|보다|이라|하고|들의|들을|들이)$/, "", w)
   sub(/(을|를|이|가|은|는|에|의|와|과|도|만|로|랑|나)$/, "", w)
   return w
@@ -235,4 +261,4 @@ BEGIN {
   if (F["pin"] == "true") score += 2
   if (score > 0) printf "%.1f\t%s\n", score, $0
 }
-' "$idx" | sort -k1,1rn | head -n "$N"
+' "$idx" | LC_ALL=C sort -k1,1rn | head -n "$N"

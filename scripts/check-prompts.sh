@@ -14,6 +14,11 @@
 # Performance: one awk process per kind. See task 12 -- the per-file shell version
 # spent ~13 processes per document and took 32s for 13 documents on Windows.
 
+# See reindex.sh: awk is byte-oriented on macOS and character-oriented under GNU awk
+# in a UTF-8 locale, and glob order follows LC_COLLATE. Pinned so the same repo lints
+# to the same report on every machine. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2
@@ -25,6 +30,11 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --strict) STRICT=1; shift ;;
     --report) REPORT=1; shift ;;     # list everything, never exit non-zero
+    # An unknown --option used to fall through to the file list, where a path that
+    # does not exist is skipped -- so `check-prompts.sh --all` linted nothing and
+    # printed "OK". A linter that reports success for work it never did is worse
+    # than one that crashes. Reject the flag instead. See E0003.
+    --*) echo "check-prompts.sh: unknown option $1 (there is no --all; run with no arguments to lint everything)" >&2; exit 2 ;;
     *) FILES="$FILES $1"; STRICT=1; shift ;;
   esac
 done

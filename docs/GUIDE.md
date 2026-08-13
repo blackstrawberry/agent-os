@@ -147,7 +147,16 @@ The point: the request did not just get "done" — the codebase's source of trut
 | `check-prompts.sh [--report]` | frontmatter lint; `--report` never fails |
 | `tags-gap.sh` | documents nothing can find (tags empty) |
 | `agent-os-health.sh [--oneline]` | what has gone quiet. Read-only |
+| `portability-test.sh [-v]` | same answer on every machine? Run it on a new one |
 | `bare-test.md` | is this harness still earning its place? |
 | `git config core.hooksPath .agent-os/scripts/hooks` | turn on forced sync |
+
+**On a new machine, run `portability-test.sh` first.** Two clone-local things no
+checkout carries: `core.hooksPath` is unset, so the commit gate is off, and git will
+refuse a hook that lost its exec bit — on macOS and Linux, silently. It also checks
+the places where implementations disagree: macOS `awk` counts `length()` in bytes
+where GNU `awk` counts characters, and glob order follows `LC_COLLATE`, so an index
+built in two locales holds the same entries in a different order. Every script pins
+`LC_ALL=C` for that reason; the test is what keeps it true.
 
 See [CONCEPT.md](CONCEPT.md) for *why* it is built this way.

@@ -36,6 +36,13 @@
 # (observed on a 260-document repo: refs total 539 against a true 827). Entry count
 # stays correct in that failure mode, so it does not show up in a line-count check.
 
+# Locale is pinned in every agent-os script. Two things vary without it and both are
+# silent. awk counts length()/substr() in BYTES on macOS and in CHARACTERS under GNU
+# awk in a UTF-8 locale. And shell glob expansion sorts by LC_COLLATE, so the same
+# repo indexed on two machines yields the same entries in a different ORDER -- where
+# index.jsonl is tracked, that is a diff every contributor flips back. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 
 # Marks the end of the reference pool on awk stdin. grep only emits lines matching

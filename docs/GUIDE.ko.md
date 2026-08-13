@@ -147,7 +147,15 @@ frontmatter `status: completed`, 파일을 `.agent-os/prompts/tasks/completed/`�
 | `check-prompts.sh [--report]` | frontmatter 린트. `--report` 는 실패하지 않음 |
 | `tags-gap.sh` | 태그가 비어 아무도 못 찾는 문서 |
 | `agent-os-health.sh [--oneline]` | 조용해진 것들. 읽기 전용 |
+| `portability-test.sh [-v]` | 어느 머신에서나 같은 답이 나오는가. 새 머신에서 먼저 |
 | `bare-test.md` | 이 하네스가 아직 값을 하는가 |
 | `git config core.hooksPath .agent-os/scripts/hooks` | 강제 동기화 on |
+
+**새 머신에서는 `portability-test.sh` 부터 돌려라.** 체크아웃이 안 옮겨주는 클론 로컬
+설정이 둘 있다 — `core.hooksPath` 는 꺼져 있어 커밋 게이트가 없고, 실행권한을 잃은 훅은
+git 이 거부한다(macOS·Linux 에서 **조용히**). 구현이 갈리는 자리도 같이 본다. macOS `awk`
+는 `length()` 를 바이트로 세고 GNU `awk` 는 문자로 센다. glob 순서는 `LC_COLLATE` 를 타서
+같은 인덱스가 로케일마다 **순서만** 달라진다. 모든 스크립트가 `LC_ALL=C` 를 고정하는 이유고,
+그게 유지되는지 확인하는 것이 이 테스트다.
 
 왜 이렇게 설계했는지는 [CONCEPT.ko.md](CONCEPT.ko.md) 참조.

@@ -20,6 +20,11 @@
 # wait for is a preview nobody runs, and compaction was dead in 13 of 14 installs.
 # The write path still loops, but only over the handful of documents actually archived.
 
+# See reindex.sh: awk byte-vs-character semantics and LC_COLLATE glob order both vary
+# by locale, silently. Archival picks what to delete, so a locale-dependent selection
+# is the last thing this should have. Task 17.
+export LC_ALL=C
+
 AOS=".agent-os"
 root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2
