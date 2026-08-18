@@ -39,11 +39,21 @@ idx="$AOS/prompts/index.jsonl"
 
 Q=""; FILT=""; KIND=""; N=8
 while [ $# -gt 0 ]; do
+  # Every option here takes a value, so the missing-value check belongs to the loop,
+  # not to each branch. Without it `shift 2` on a one-argument tail failed, $# never
+  # shrank, and the loop spun forever -- the search command hung its caller.
+  [ $# -ge 2 ] || { echo "rank.sh: $1 needs a value" >&2; exit 2; }
   case "$1" in
     -q) Q="$2"; shift 2 ;;
     -f) FILT="$2"; shift 2 ;;
     -k) KIND="$2"; shift 2 ;;
-    -n) N="$2"; shift 2 ;;
+    # An unchecked -n reached `head -n` directly. 0 and negatives printed nothing and
+    # exited 0 -- indistinguishable from "no related prior work", which the protocol
+    # says to accept and move on from. A search must not be able to report empty
+    # because of how it was called. See E0003.
+    -n) case "$2" in *[!0-9]*) echo "rank.sh: -n needs a positive integer, got [$2]" >&2; exit 2 ;; esac
+        [ "$2" -ge 1 ] || { echo "rank.sh: -n must be >= 1, got [$2]" >&2; exit 2; }
+        N="$2"; shift 2 ;;
     *) echo "rank.sh: unknown option $1" >&2; exit 2 ;;
   esac
 done

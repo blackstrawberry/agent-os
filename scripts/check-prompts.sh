@@ -155,6 +155,8 @@ lint() { # kind keys statuslist catlist  (paths on stdin)
 }
 
 fail=0
+# A gate that cannot tell "passed" from "linted nothing" is not a gate (E0003).
+nchecked=0
 if [ -n "$FILES" ]; then
   # explicit list: split by directory so each doc is checked against its own schema
   for f in $FILES; do
@@ -162,9 +164,11 @@ if [ -n "$FILES" ]; then
     case "$f" in
       */_TEMPLATE.md) continue ;;
       "$AOS"/prompts/errors/*)
+        nchecked=$((nchecked + 1))
         printf '%s\n' "$f" | lint error "type id date severity category status summary" "$ERROR_STATUS" || fail=1 ;;
       */manual-*.md) continue ;;
       "$AOS"/prompts/tasks/*)
+        nchecked=$((nchecked + 1))
         printf '%s\n' "$f" | lint task "type id title status created updated summary" "$TASK_STATUS" || fail=1 ;;
     esac
   done
@@ -175,6 +179,7 @@ else
     case "$f" in */_TEMPLATE.md|*/manual-*.md) continue ;; esac
     set -- "$@" "$f"
   done
+  nchecked=$((nchecked + $#))
   [ $# -eq 0 ] || printf '%s\n' "$@" | lint task "type id title status created updated summary" "$TASK_STATUS" || fail=1
 
   set --
@@ -183,6 +188,7 @@ else
     case "$f" in */_TEMPLATE.md) continue ;; esac
     set -- "$@" "$f"
   done
+  nchecked=$((nchecked + $#))
   [ $# -eq 0 ] || printf '%s\n' "$@" | lint error "type id date severity category status summary" "$ERROR_STATUS" || fail=1
 fi
 
@@ -190,5 +196,5 @@ if [ "$REPORT" -eq 1 ]; then
   echo "(--report: findings above are informational; exiting 0)"
   exit 0
 fi
-[ "$fail" -eq 0 ] && echo "OK: prompts frontmatter valid"
+[ "$fail" -eq 0 ] && echo "OK: prompts frontmatter valid ($nchecked docs)"
 exit $fail

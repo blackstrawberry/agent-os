@@ -20,9 +20,40 @@ Removing a rule needs evidence exactly as much as adding one did. This is how yo
 1. **Fill `prompts/eval/eval-set.md` first.** Five rows minimum, decidable, sourced.
    Without it there is nothing to measure and the rest of this document is theatre.
 
-2. **Bare run.** Comment out the `<!-- agent-os:begin -->` … `<!-- agent-os:end -->`
-   block in `CLAUDE.md`. Start a fresh session. Ask the five questions. Score.
-   - Fresh session matters. A session that already read the rules has them in context.
+2. **Bare run.** Disable the `<!-- agent-os:begin -->` … `<!-- agent-os:end -->` block in
+   `CLAUDE.md`. Start a fresh session. Ask the five questions. Score.
+   - The block contains HTML comments already, so wrapping it in one does not comment it
+     out — comments do not nest. Move the file instead (`git mv CLAUDE.md CLAUDE.md.off`);
+     `git checkout` always restores it.
+   - **Fresh session means a new process, not a subagent and not `/clear`.** `CLAUDE.md` is
+     loaded once at session start and subagents inherit the parent's copy — measured
+     2026-08-17: with the file *deleted*, a freshly spawned subagent still quoted the
+     protocol verbatim. Editing the file mid-session changes nothing that is already loaded.
+   - **A new process is enough; it does not have to be a person opening one.** Measured
+     2026-08-18: `git worktree add` a detached copy, delete `CLAUDE.md` *inside the
+     worktree*, and run the questions there with `claude -p` (`--session-id` on the probe,
+     `--resume` for the questions, so probe and questions share one session). The
+     subprocess looks for the project `CLAUDE.md` on disk, finds none, and starts bare.
+     The main working tree is never touched, which removes the restore-it-afterwards trap
+     entirely. Note the worktree has no untracked files — no `index.jsonl`, so nothing
+     that depends on the index can be measured this way.
+   - **Run the probe against the *harnessed* tree first.** A `NONE` proves nothing on its
+     own: a probe that is simply broken also answers `NONE`. Confirm it quotes the protocol
+     where the protocol exists, then go bare. Same failure shape as `E0003`/`E0004` — a
+     check that cannot tell "passed" from "never ran" is not a check.
+   - **First prompt of the bare session is a control check, not a question:**
+     *"For this one question only, read no files and answer from context alone. (The
+     restriction applies to this question only; open files normally from the next question
+     on.) Were you given agent-os protocol instructions? Quote the first 200 characters,
+     or answer NONE."* Anything but `NONE` and the session is not a control — stop and
+     start over. A run whose control was never checked is indistinguishable from a run
+     that silently kept the rules.
+   - **Scope that "read no files" to the probe explicitly.** Measured 2026-08-17: without
+     the scoping clause the model held the restriction for the whole session and answered
+     all five questions without opening a single file, while the comparison run used 5–12
+     tool calls per question. That contaminates the difference with *file access* on top of
+     *rules*, and it is invisible until the model mentions it in passing — here, at
+     question five: "you told me not to read, so I still haven't opened anything."
 
 3. **Harnessed run.** Restore the block. Fresh session. Same five questions. Score.
 

@@ -172,6 +172,28 @@ AREAGAP=$(printf '%s\n' "$REPORT" | grep -c '^AREAGAP ')
 PINPCT=0
 [ "$N" -gt 0 ] && PINPCT=$(( NPIN * 100 / N ))
 
+
+# Ranking signals the index carries but nothing fills. rank.sh scores
+#   base = 3*tags + 3*kw + 2*area + summary + rc + path,  then multiplies by sev and rec
+#   and adds a file-overlap bonus for -f.
+# A field the templates never ask for -- or ask for under a different name -- arrives as
+# an empty string, contributes zero, and raises nothing. Measured across twelve installs:
+# `files` was absent from every task template, `keywords` from one whole install, and one
+# install spelled root_cause as `cause`, so the data existed and was discarded. Nobody
+# noticed for the same reason every time: an absent signal looks exactly like a document
+# that does not match. Task 21.
+DEAD=""
+for f in kw rc files sev; do
+  c=$(LC_ALL=C awk -v key="$f" '
+    { pat = "\"" key "\":\"[^\"]*\""
+      if (match($0, pat)) {
+        v = substr($0, RSTART + length(key) + 4, RLENGTH - length(key) - 5)
+        if (v != "") n++
+      } }
+    END { print n+0 }' "$idx")
+  [ "$c" -eq 0 ] && DEAD="$DEAD $f"
+done
+
 pending=0
 [ "$N" -gt "$MAX" ] && pending=1
 [ "$COLD" -ge "$NUDGE" ] && pending=1
@@ -183,6 +205,7 @@ pending=0
 [ "$UNPROM" -gt 0 ] && pending=1
 [ "$evalrows" -ge 0 ] && [ "$evalrows" -lt 3 ] && pending=1
 [ -n "$overbudget" ] && pending=1
+[ -n "$DEAD" ] && pending=1
 [ "$AREAGAP" -gt 0 ] && pending=1
 [ ! -f "$risks" ] && [ "$NERR" -gt 0 ] && pending=1
 
@@ -198,11 +221,21 @@ if [ "$ONELINE" -eq 1 ]; then
   [ ! -f "$risks" ] && [ "$NERR" -gt 0 ] && parts="$parts no known-risks file;"
   [ "$evalrows" -ge 0 ] && [ "$evalrows" -lt 3 ] && parts="$parts eval-set unwritten;"
   [ -n "$overbudget" ] && parts="$parts injected text over budget;"
+  [ -n "$DEAD" ]       && parts="$parts dead ranking signal(s):$DEAD;"
   echo "[agent-os]$parts run: sh $AOS/scripts/agent-os-health.sh"
   exit 0
 fi
 
 echo "[health] index: $N entries (max $MAX, nudge $NUDGE) | open tasks: $OPEN | errors: $NERR | pinned: $NPIN ($PINPCT%)"
+# What this install actually has. Without it "are you behind?" is unanswerable and the
+# only way to find out is diffing every script by hand against the source checkout --
+# which is how twelve repositories drifted into three different generations of the
+# error template without anyone seeing it.
+if [ -f "$AOS/VERSION" ]; then
+  echo "[health] agent-os version: $(cat "$AOS/VERSION")   (refresh: sh <agent-os>/scripts/init.sh --update)"
+else
+  echo "[health] agent-os version: unknown -- no $AOS/VERSION. Run init.sh --update from the source checkout."
+fi
 echo "[health] cold candidates: $COLD (finished, unreferenced, unpinned, older than $COLD_CUT)"
 
 [ "$stale" -gt 0 ] && {
@@ -239,6 +272,15 @@ else
     list UNPROMLIST | sed 's/^/[health]       /'
   fi
   printf '%s\n' "$REPORT" | awk '$1=="AREAGAP" { printf "[health][warn] area %s has %s errors but no known-risks coverage.\n", $2, $3 }'
+fi
+
+if [ -n "$DEAD" ]; then
+  echo "[health][warn] ranking signal(s) filled on zero documents:$DEAD"
+  echo "[health]       rank.sh scores on these. Empty is indistinguishable from no match, so"
+  echo "[health]       the loss is silent. Check the TEMPLATE first, not people's discipline:"
+  echo "[health]       reindex.sh reads keywords / root_cause (or cause) / files / severity."
+  echo "[health]       A key the template never asks for never gets filled; a key it asks for"
+  echo "[health]       under another name is filled and then thrown away."
 fi
 
 if [ -n "$overbudget" ]; then

@@ -21,6 +21,12 @@ recurrence: 1           # HOW MANY TIMES THIS HAS BITTEN, counting the first one
 last_seen: ""           # YYYY-MM-DD of the MOST RECENT occurrence. Set it on every recurrence.
                         # `date` stays the first occurrence; ranking and archival read last_seen first,
                         # so a trap that bit again last week does not look a year stale.
+caught_by: ""           # self | review | user | runtime  -- who FIRST surfaced this.
+                        # review = a pass in a SEPARATE context (critic, red-team, verifier).
+                        # self   = the author, including their own harness, tests or canary.
+                        # Leave it empty if the record does not say. Do NOT round up to self --
+                        # measured 2026-08-18, half of 128 error docs could not be classified
+                        # at all, which put a ceiling on every conclusion drawn from them.
 root_cause: ""          # one line, distilled from the section below. Indexed for recurrence matching
 summary: one-line summary (what went wrong)
 ---

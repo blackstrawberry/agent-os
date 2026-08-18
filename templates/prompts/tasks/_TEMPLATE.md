@@ -9,10 +9,17 @@ status: planned          # planned | in-progress | completed | blocked | superse
 created: 2025-01-01       # YYYY-MM-DD (real date)
 updated: 2025-01-01       # YYYY-MM-DD
 tags: []                 # free keywords (for search)
+keywords: []             # extra search keys, weight 3 like tags -- symptom words, error
+                         # strings, library and symbol names. Separate from tags on purpose:
+                         # tags are the shelf it sits on, keywords are what you would type.
 area: []                 # code area (adapt per project): frontend | backend | api | db | common | infra | meta
 pin: false               # true = never auto-archive (load-bearing / permanently relevant)
 related_docs: []         # docs paths referenced
 related_errors: []       # related error ids (EXXXX)
+files:                   # source paths this task touched, comma separated -- rank.sh's
+                         # strongest signal. `rank.sh -f <path>` surfaces this document
+                         # when someone edits one of these, even with zero keyword hits.
+                         # Leave it empty and the task is findable by wording only.
 summary: one-line summary
 ---
 

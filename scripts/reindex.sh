@@ -5,7 +5,7 @@
 # Each line carries the eviction signals: refs (inbound references), updated date, pin, status.
 #
 # Fields, in line order:
-#   k id status cat area tags refs pin        -- routing and eviction
+#   k id status cat area tags date refs pin   -- routing and eviction
 #   date   last_seen, else date, else updated, else created  -- the LAST touch, not the first
 #   sev    normalized severity, "" on tasks   -- low | medium | high | critical
 #   rec    occurrence count, always >= 1      -- from `recurrence` (count or list form)
@@ -138,6 +138,17 @@ function reccount(v,   n, a) {
   return n + 1
 }
 
+function unqlist(v) {
+  # `keywords: ["a", "b"]` -- get() peels one outer bracket and one outer quote pair,
+  # which leaves the INNER quotes sitting on every separator: `a", "b`. tags: is
+  # usually written unquoted so it never showed, and matching still worked because the
+  # scorer looks for substrings, so this sat there looking like a formatting quirk.
+  # A multi-word keyword would not have matched, though. Only the separator sequence is
+  # rewritten; an item that genuinely contains `", "` is the one case this flattens.
+  gsub(/"[ 	]*,[ 	]*"/, ", ", v)
+  return v
+}
+
 function recchain(v,   out) {
   # The list form only. Quotes and spaces are stripped so task 04 can consume it
   # directly; the unmodified value stays in the .md.
@@ -170,7 +181,7 @@ function emit(path, kind,   id, status, summary, area, tags, cat, pin, d, refs, 
                            sev, recraw, rec, recof, files, kw, rc) {
   read_fm(path)
   id = get("id"); status = get("status"); summary = get("summary")
-  area = get("area"); tags = get("tags"); cat = get("category"); pin = get("pin")
+  area = unqlist(get("area")); tags = unqlist(get("tags")); cat = get("category"); pin = get("pin")
   # last_seen wins so a trap that recurred recently does not read as stale. `date`
   # keeps the first occurrence in the .md; only the ranking and archival view moves.
   d = get("last_seen")
@@ -186,9 +197,11 @@ function emit(path, kind,   id, status, summary, area, tags, cat, pin, d, refs, 
   recraw = get("recurrence")
   rec    = reccount(recraw)               # occurrences, always >= 1
   recof  = recchain(recraw)               # prior error ids when the list form is used
-  files  = get("files")                   # path matching -- the strongest single signal
-  kw     = get("keywords")                # second search key, separate from tags
+  files  = unqlist(get("files"))                   # path matching -- the strongest single signal
+  kw     = unqlist(get("keywords"))                # second search key, separate from tags
   rc     = get("root_cause")              # first-pass key for recurrence matching
+  cby    = get("caught_by")               # self|review|user|runtime -- not scored, counted
+  if (rc == "") rc = get("cause")         # installs that shortened the key still get indexed
 
   # An unknown kind sees both pools, as the v1 relpool fallback did. A `related:`
   # line is in both, so it is counted twice there -- same as v1.
@@ -199,9 +212,9 @@ function emit(path, kind,   id, status, summary, area, tags, cat, pin, d, refs, 
   # greedy sed patterns that take the LAST match of a key, so anything placed after
   # summary or path could be shadowed by prose; inserting before summary adds no
   # exposure that summary did not already have.
-  printf "{\"k\":\"%s\",\"id\":\"%s\",\"status\":\"%s\",\"cat\":\"%s\",\"area\":\"%s\",\"tags\":\"%s\",\"date\":\"%s\",\"refs\":%d,\"pin\":%s,\"sev\":\"%s\",\"rec\":%d,\"recof\":\"%s\",\"files\":\"%s\",\"kw\":\"%s\",\"rc\":\"%s\",\"summary\":\"%s\",\"path\":\"%s\"}\n", \
+  printf "{\"k\":\"%s\",\"id\":\"%s\",\"status\":\"%s\",\"cat\":\"%s\",\"area\":\"%s\",\"tags\":\"%s\",\"date\":\"%s\",\"refs\":%d,\"pin\":%s,\"sev\":\"%s\",\"rec\":%d,\"recof\":\"%s\",\"files\":\"%s\",\"kw\":\"%s\",\"rc\":\"%s\",\"cby\":\"%s\",\"summary\":\"%s\",\"path\":\"%s\"}\n", \
     esc(kind), esc(id), esc(status), esc(cat), esc(area), esc(tags), esc(d), \
-    refs, pin, esc(sev), rec, esc(recof), esc(files), esc(kw), esc(rc), \
+    refs, pin, esc(sev), rec, esc(recof), esc(files), esc(kw), esc(rc), esc(cby), \
     esc(summary), esc(path)
 }
 
