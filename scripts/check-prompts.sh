@@ -162,11 +162,16 @@ if [ -n "$FILES" ]; then
   for f in $FILES; do
     [ -e "$f" ] || continue
     case "$f" in
-      */_TEMPLATE.md) continue ;;
+      # Skips come FIRST, before any kind branch. They sat BETWEEN them, so a path
+      # matched errors/* and never reached the manual-* line under it: tasks skipped
+      # their index document and errors linted theirs. Two installs reported the
+      # asymmetry independently, which is what made it ordering rather than intent.
+      # manual-*.md are hand-kept contents pages. Forcing a type: onto one to satisfy
+      # the linter would file a table of contents as an error.
+      */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;;
       "$AOS"/prompts/errors/*)
         nchecked=$((nchecked + 1))
         printf '%s\n' "$f" | lint error "type id date severity category status summary" "$ERROR_STATUS" || fail=1 ;;
-      */manual-*.md) continue ;;
       "$AOS"/prompts/tasks/*)
         nchecked=$((nchecked + 1))
         printf '%s\n' "$f" | lint task "type id title status created updated summary" "$TASK_STATUS" || fail=1 ;;
@@ -176,7 +181,7 @@ else
   set --
   for f in "$AOS"/prompts/tasks/*.md "$AOS"/prompts/tasks/completed/*.md; do
     [ -e "$f" ] || continue
-    case "$f" in */_TEMPLATE.md|*/manual-*.md) continue ;; esac
+    case "$f" in */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;; esac
     set -- "$@" "$f"
   done
   nchecked=$((nchecked + $#))
@@ -185,7 +190,7 @@ else
   set --
   for f in "$AOS"/prompts/errors/*.md; do
     [ -e "$f" ] || continue
-    case "$f" in */_TEMPLATE.md) continue ;; esac
+    case "$f" in */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;; esac
     set -- "$@" "$f"
   done
   nchecked=$((nchecked + $#))

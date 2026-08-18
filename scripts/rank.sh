@@ -18,6 +18,17 @@
 #
 # Scoring
 #   base  = 3*tags + 3*kw + 2*area + 1*summary + 1*rc     (per query word, presence)
+#
+# INCIDENTS OUTRANK PLANS, BY DESIGN AND BY A LOT. Every multiplier attaches to
+# error documents: severity 0.5-3.0, recurrence 1.0-3.0, open 1.5, recent 1.5. A
+# task carries none of them -- no severity, recurrence 1, completed 1.0 -- and an
+# old one is damped to 0.6. Measured spread on this corpus: 3.0 against 1.5 on the
+# multipliers alone, and up to 33x once age is included.
+#
+# That is right for "have we been bitten here before", which is what the protocol
+# asks first. It is wrong for "where is the design document for this subsystem" --
+# that query loses to every incident that ever touched the area. Pass -k task.
+# Written down because it was not: an install had to work it out from the source.
 #   score = base * sev_w * rec_w * age_w * open_w
 #         + 10 if a -f path meets the entry's files
 #         + 0.5 * refs
@@ -140,7 +151,12 @@ function hits(field, weight,   g, j, n) {
   n = 0
   for (g = 1; g <= ng; g++) {
     for (j = 1; j <= gn[g]; j++) {
-      if (index(field, gt[g, j]) > 0) { n += weight; break }
+      # termhit(), not index(): the same short-ASCII boundary rule the query side has
+      # used all along. Without it "to" matched inside "tool" and "be" inside "before"
+      # when scoring the fields of a document, which is how an unrelated document took
+      # place at 50.0 for "expected 403 to be 202". CJK is unaffected -- termhit falls
+      # through to substring for anything non-ASCII or longer than three characters.
+      if (termhit(field, gt[g, j])) { n += weight; break }
     }
   }
   return n
@@ -202,6 +218,29 @@ function termhit(q, t) {
     return (" " q " ") ~ ("[^a-z0-9_]" t "[^a-z0-9_]")
   return index(q, t) > 0
 }
+function qhit(q, t) {
+  # QUERY side. An alias line joins the search when one of its terms appears in what
+  # the user typed -- and "appears in" used to mean substring for anything over three
+  # characters. So `initManualQueue` contained `queue` and `manual`, one typed word
+  # spawned three scoring groups, and the queue and manual clusters landed at or above
+  # the document that is actually about initManualQueue. Measured on a five-document
+  # fixture: the right answer came third of five, tied.
+  #
+  # ASCII alias terms now have to sit on a word boundary in the query, at any length --
+  # not just at three characters like the field side. The two sides want different
+  # rules: inside a DOCUMENT, `deploy` should still reach `deployment`, but in a QUERY,
+  # an alias buried in an identifier is almost never what the person meant.
+  #
+  # The cost is inflection: `queues` no longer triggers the `queue` line. That is the
+  # documented way this map works -- when a query misses, you add the surface form to
+  # vocab.txt. The line already lists its own variants.
+  #
+  # CJK is untouched. Korean and Japanese have no word separators, so a boundary rule
+  # there would break every query in those languages.
+  if (t ~ /^[a-z0-9_-]+$/)
+    return (" " q " ") ~ ("[^a-z0-9_]" t "[^a-z0-9_]")
+  return index(q, t) > 0
+}
 function loadvocab(path, q,   line, canon, rest, n, a, i, matched) {
   # vocab.txt: one concept per line, "canonical: alias, alias, ...". A line joins the
   # query when any of its terms appears in the raw query string, and then the whole
@@ -220,7 +259,7 @@ function loadvocab(path, q,   line, canon, rest, n, a, i, matched) {
     matched = 0
     for (i = 1; i <= n; i++) {
       gsub(/^[ \t]+|[ \t]+$/, "", a[i])
-      if (a[i] != "" && termhit(q, a[i])) { matched = 1; break }
+      if (a[i] != "" && qhit(q, a[i])) { matched = 1; break }
     }
     if (!matched) continue
     ng++

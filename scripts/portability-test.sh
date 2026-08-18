@@ -62,6 +62,7 @@ FN_UCHARS=$(extract_fn uchars "$RANK")
 FN_DESTEM=$(extract_fn destem "$RANK")
 FN_ISWORD=$(extract_fn isword "$RANK")
 FN_TERMHIT=$(extract_fn termhit "$RANK")
+FN_QHIT=$(extract_fn qhit "$RANK")
 
 [ -n "$FN_DESTEM" ] || { echo "portability-test: destem() not found in $RANK"; exit 2; }
 if [ -z "$FN_UCHARS" ]; then
@@ -78,12 +79,46 @@ trap 'rm -f "$PROG"' EXIT
 # LC_ALL=C because that is how rank.sh invokes awk, and uchars() is only valid there
 # (a UTF-8-locale BSD awk dies on a lone continuation byte).
 call() {
-  { printf '%s\n%s\n' "$FN_UCHARS" "$FN_DESTEM" "$FN_ISWORD" "$FN_TERMHIT"
+  { printf '%s\n%s\n' "$FN_UCHARS" "$FN_DESTEM" "$FN_ISWORD" "$FN_TERMHIT" "$FN_QHIT"
     printf 'BEGIN { print %s }\n' "$1"; } > "$PROG"
   LC_ALL=C awk -f "$PROG" </dev/null 2>/dev/null
 }
 
 echo "portability-test: $(uname -s) / $(awk --version 2>&1 | head -1)"
+
+# --- 0. the scripts actually parse and run ----------------------------------
+# Everything below either extracts functions from rank.sh as TEXT or feeds it bad
+# options and expects a non-zero exit. Both pass on a script that does not parse.
+# Measured 2026-08-18: an apostrophe inside a comment closed the single-quoted awk
+# program, rank.sh died with "must contain complete functions", and this suite said
+# 51 passed. Third time in one day that a gate cleared a broken artifact.
+#
+# Two probes, because they catch different things. `sh -n` reads the shell syntax and
+# nothing else -- it sees the unterminated quote. It does NOT see a malformed awk
+# program, which is just a string as far as the shell is concerned, so each script also
+# gets one benign real invocation and its stderr is read.
+for s in rank.sh reindex.sh check-prompts.sh agent-os-health.sh tags-gap.sh; do
+  [ -f "$AOS/scripts/$s" ] || continue
+  if ! err=$(sh -n "$AOS/scripts/$s" 2>&1); then
+    report FAIL "$s: shell syntax" "parses" "$(printf '%s' "$err" | head -1 | cut -c1-52)"
+    continue
+  fi
+  report ok "$s: shell syntax"
+done
+
+# reindex writes, so it goes to a temp path; the others are read-only here.
+run_err=$(AGENT_OS_INDEX_OUT="$PROG.smoke" sh "$AOS/scripts/reindex.sh" 2>&1 >/dev/null); rm -f "$PROG.smoke"
+case "$run_err" in
+  "") report ok "reindex.sh: runs clean" ;;
+  *)  report FAIL "reindex.sh: runs clean" "no stderr" "$(printf '%s' "$run_err" | head -1 | cut -c1-52)" ;;
+esac
+if [ -f "$AOS/prompts/index.jsonl" ]; then
+  rank_err=$(sh "$RANK" -q "zzqqxx" -n 1 2>&1 >/dev/null)
+  case "$rank_err" in
+    "") report ok "rank.sh: runs clean" ;;
+    *)  report FAIL "rank.sh: runs clean" "no stderr" "$(printf '%s' "$rank_err" | head -1 | cut -c1-52)" ;;
+  esac
+fi
 
 # --- 1. character counting is not byte counting ---------------------------
 for case in '한글ABC:5' ':0' 'abc:3' '테스트:3' 'あア漢:3'; do
@@ -111,6 +146,34 @@ if [ -n "$FN_TERMHIT" ]; then
   done
 else
   report FAIL "termhit() is defined in rank.sh" "present" "missing"
+fi
+
+# --- 1c. query-side alias triggers need a full word boundary ------------------
+# The field side lets `deploy` reach `deployment` inside a document. The query side
+# must not: `initManualQueue` contains `queue` and `manual`, and treating those as
+# alias triggers turned one typed word into three scoring groups. On a five-document
+# fixture the document actually about initManualQueue came third, tied, behind two
+# manual documents. With the boundary it is first and alone.
+#
+# The trap this pins is not only the rule. termhit() already existed under that name
+# when a second one was almost added, the assertion caught it, the refusal was misread,
+# and nine fixtures went green against a function nobody had changed (E0007). So this
+# checks the CALLER too: loadvocab has to call qhit, not termhit.
+if [ -n "$FN_QHIT" ]; then
+  for case in 'queue|initmanualqueue|0' 'queue|queue retry|1' 'manual|initmanualqueue|0' \
+              'manual|manual run|1' 'queue|the-queue-drain|1' 'deploy|redeployment|0'; do
+    t=${case%%|*}; rest=${case#*|}; hay=${rest%|*}; want=${rest##*|}
+    got=$(call "qhit(\"$hay\", \"$t\")")
+    [ "$got" = "$want" ] && report ok "qhit($t in '$hay')" \
+                         || report FAIL "qhit($t in '$hay')" "$want" "$got"
+  done
+  if grep -q 'qhit(q, a\[i\])' "$RANK"; then
+    report ok "loadvocab calls qhit, not termhit"
+  else
+    report FAIL "loadvocab calls qhit, not termhit" "qhit(q, a[i])" "not found in $RANK"
+  fi
+else
+  report FAIL "qhit() is defined in rank.sh" "present" "missing"
 fi
 
 # --- 2. destem: the short-word guard must fire for short KOREAN words -----
@@ -208,7 +271,43 @@ if [ -f "$AOS/prompts/index.jsonl" ]; then
   # glob expansion sorts by LC_COLLATE, so two machines produced the same entries in a
   # different ORDER -- and index.jsonl is tracked in most installs, so that is a diff
   # each contributor flips back forever. Ordering bugs do not announce themselves.
-  for s in reindex.sh check-prompts.sh tags-gap.sh agent-os-compact.sh agent-os-health.sh; do
+  # reindex.sh is compared on the FILE it writes, not on its stdout. Measured
+  # 2026-08-18: with reindex's own `export LC_ALL=C` removed -- exactly the regression
+  # task 17 fixed -- all four locales printed a byte-identical "reindexed: N entries"
+  # line while the index itself split into two orderings (C 1378658922, the rest
+  # 2068994880). The check that existed to catch collation drift could not see
+  # collation drift, because the only thing it looked at was a message with no
+  # ordering in it.
+  #
+  # It also writes to a temp path now. The old form rewrote the tracked index four
+  # times per run, which pulled another session's uncommitted documents into it once
+  # and leaves an unknown state if the run is killed midway. A test that mutates what
+  # it inspects is not a test.
+  if [ -f "$AOS/scripts/reindex.sh" ]; then
+    # A tree that changes mid-run makes the four runs incomparable, and the old check
+    # called that a locale failure. The slow shell implementation left a window of
+    # minutes; the awk rewrite shrank it and did not close it. Notice it, do not guess.
+    before=$(find "$AOS/prompts" "$AOS/docs/adr" -name '*.md' 2>/dev/null | sort | cksum)
+    ref=""; same=1
+    for L in C ja_JP.UTF-8 ko_KR.UTF-8 en_US.UTF-8; do
+      o="$PROG.idx"
+      AGENT_OS_INDEX_OUT="$o" LC_ALL=$L sh "$AOS/scripts/reindex.sh" >/dev/null 2>&1
+      m=$(cksum < "$o" 2>/dev/null)
+      rm -f "$o"
+      if [ -z "$ref" ]; then ref=$m; elif [ "$m" != "$ref" ]; then same=0; fi
+    done
+    after=$(find "$AOS/prompts" "$AOS/docs/adr" -name '*.md' 2>/dev/null | sort | cksum)
+    if [ "$before" != "$after" ]; then
+      report ok "locale-stable index: reindex.sh (skipped -- documents changed mid-run)"
+    elif [ "$same" = 1 ]; then
+      report ok "locale-stable index: reindex.sh"
+    else
+      report FAIL "locale-stable index: reindex.sh" "identical index bytes" "order varies by locale"
+    fi
+  fi
+
+  # The rest only report; stdout is the whole of what they produce.
+  for s in check-prompts.sh tags-gap.sh agent-os-compact.sh agent-os-health.sh; do
     [ -f "$AOS/scripts/$s" ] || continue
     ref=""; same=1
     for L in C ja_JP.UTF-8 ko_KR.UTF-8 en_US.UTF-8; do
@@ -231,9 +330,25 @@ fi
 # from a run that did nothing. Count the inputs independently of the parser.
 if [ -d "$AOS/prompts" ]; then
   # Decision records live under docs/adr/, not prompts/ -- reindex walks both, so the
-  # independent count has to as well. Getting that wrong once is how this check first
-  # reported 27 against 30 and looked like a reindex bug rather than a counting bug.
-  want=$(find "$AOS/prompts" "$AOS/docs/adr" -name '*.md' -not -name '_TEMPLATE.md'            -exec grep -lE '^type:[[:space:]]*[a-z]' {} + 2>/dev/null | wc -l | tr -d ' ')
+  # independent count has to as well. Getting that wrong once made this report 27
+  # against 30 and look like a reindex bug rather than a counting bug.
+  #
+  # `type:` only counts inside the FRONTMATTER. A grep over the whole file also matches
+  # the format example in a document that explains what frontmatter looks like, and any
+  # install that keeps such a page counted one document more than existed. Reported
+  # from an install that has one; this repo does not, which is placement rather than
+  # design. The reindex loops skip manual-*.md, so this must too, or the two disagree
+  # about what a document is and the comparison stops meaning anything.
+  #
+  # Still a recursive find rather than reindex's own globs: the whole point of this
+  # check is to count the inputs WITHOUT using the indexer, so that "reindex skipped a
+  # directory" is a failure it can see. Reusing the globs would make it agree by
+  # construction.
+  want=$(find "$AOS/prompts" "$AOS/docs/adr" -name '*.md'               -not -name '_TEMPLATE.md' -not -name 'manual-*.md' -not -name 'README.md'               -exec awk '
+                FNR == 1        { fm = ($0 == "---"); hit = 0 }
+                fm && FNR > 1 && /^---[ 	]*$/ { fm = 0 }
+                fm && !hit && /^type:[ 	]*[a-z]/ { print FILENAME; hit = 1 }
+              ' {} + 2>/dev/null | wc -l | tr -d ' ')
   sh "$AOS/scripts/reindex.sh" >/dev/null 2>&1
   got=$(wc -l < "$AOS/prompts/index.jsonl" 2>/dev/null | tr -d ' ')
   got=${got:-0}

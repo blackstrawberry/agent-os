@@ -129,6 +129,31 @@ if [ "$UPDATE" -eq 1 ]; then
     echo "       Refusing to guess where the block is. No changes made."
     exit 2
   fi
+  # Whatever is between the markers is about to be replaced -- that is the point of
+  # --update. But a project that put its own rules in there loses them with no warning
+  # and no copy, which is what happened to one install: a project rule was gone and
+  # nobody knew until they went looking for it. The replacement stays; the silence does
+  # not. Save the outgoing block whenever it differs from what is going in.
+  awk '/<!-- agent-os:begin -->/{f=1;next} /<!-- agent-os:end -->/{f=0} f' CLAUDE.md > CLAUDE.md.aos-prevblock
+  awk '/<!-- agent-os:begin -->/{f=1;next} /<!-- agent-os:end -->/{f=0} f' "$TPL/CLAUDE.section.md" > "$TPL.aos-incoming.$$"
+  if cmp -s CLAUDE.md.aos-prevblock "$TPL.aos-incoming.$$"; then
+    rm -f CLAUDE.md.aos-prevblock
+  elif git ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && git diff --quiet -- CLAUDE.md 2>/dev/null; then
+    # Tracked and clean: the outgoing block is already in history, so writing a copy
+    # leaves an untracked file in every install on every protocol bump -- litter in the
+    # common case for a rescue that is only needed in the rare one. Say where it is.
+    rm -f CLAUDE.md.aos-prevblock
+    echo "NOTE   the replaced block differed from the shipped one."
+    echo "       CLAUDE.md is tracked and clean, so the old text is in git:"
+    echo "       git show HEAD:CLAUDE.md   (check it for project rules kept inside the markers)"
+  else
+    # Untracked or already modified -- git cannot give it back. Keep a copy.
+    echo "NOTE   the replaced block differed from the shipped one, and CLAUDE.md is not"
+    echo "       committed clean, so git cannot recover it. Saved as CLAUDE.md.aos-prevblock."
+    echo "       If this project kept its own rules inside the markers, they are in there."
+  fi
+  rm -f "$TPL.aos-incoming.$$"
+
   awk -v tpl="$TPL/CLAUDE.section.md" '
     /<!-- agent-os:begin -->/ { while ((getline l < tpl) > 0) print l; close(tpl); skip = 1; next }
     /<!-- agent-os:end -->/   { skip = 0; next }

@@ -23,6 +23,7 @@ Open the top 3 at most. **Never** grep the index for `"k":"error"` -- that loads
 `-f` is the strongest signal: a doc naming a file you will touch matters with zero keyword
 hits. Ask in any language; `.agent-os/vocab.txt` expands the query. A search that should
 have hit but did not means a missing vocab line -- add it.
+Incidents outrank plans by design; add `-k task` to find a design doc, not a trap.
 
 ### Recording (Why)
 - **Errors**: same root cause as an existing one -> bump its `recurrence` and `last_seen`,

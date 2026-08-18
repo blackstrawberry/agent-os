@@ -180,6 +180,14 @@ function wcount(s, pat,   n, P, L, pos, off, b, a) {
 function emit(path, kind,   id, status, summary, area, tags, cat, pin, d, refs, pool,
                            sev, recraw, rec, recof, files, kw, rc) {
   read_fm(path)
+  # No type: in the frontmatter means this is not a prompt document -- a directory
+  # README, a scratch note, anything someone dropped in the folder. Indexing it
+  # produced an entry with an empty id and an empty summary that matched nothing and
+  # sat in the corpus forever. check-prompts still fails loudly on a REAL document
+  # that lost its frontmatter, so nothing goes missing quietly; it just stops the
+  # index from carrying blanks. Same rule the input counter uses, so the two agree
+  # on what a document is.
+  if (get("type") == "") return
   id = get("id"); status = get("status"); summary = get("summary")
   area = unqlist(get("area")); tags = unqlist(get("tags")); cat = get("category"); pin = get("pin")
   # last_seen wins so a trap that recurred recently does not read as stale. `date`
@@ -242,7 +250,12 @@ root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$root" || exit 2
 [ -d "$AOS/prompts" ] || { echo "no $AOS/prompts here"; exit 0; }
 
-out="$AOS/prompts/index.jsonl"
+# A caller can redirect the output. portability-test needs to see what this
+# script PRODUCES under four locales, and the only way to do that used to be
+# rewriting the tracked index four times -- which swept another session's
+# uncommitted documents into it once, and leaves the file in an unknown state
+# if the run is interrupted. A test that mutates what it inspects is not a test.
+out="${AGENT_OS_INDEX_OUT:-$AOS/prompts/index.jsonl}"
 # Sweep orphans from earlier interrupted runs. The glob test keeps this from forking
 # rm on every run. ponytail: assumes no concurrent reindex; single-user repos only.
 for orphan in "$out".tmp.*; do
@@ -257,12 +270,12 @@ trap 'rm -f "$tmp"' EXIT INT TERM
 set --
 for f in "$AOS"/prompts/tasks/*.md "$AOS"/prompts/tasks/completed/*.md; do
   [ -e "$f" ] || continue
-  case "$f" in */_TEMPLATE.md|*/manual-*.md) continue ;; esac
+  case "$f" in */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;; esac
   set -- "$@" "task $f"
 done
 for f in "$AOS"/prompts/errors/*.md; do
   [ -e "$f" ] || continue
-  case "$f" in */_TEMPLATE.md) continue ;; esac
+  case "$f" in */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;; esac
   set -- "$@" "error $f"
 done
 
@@ -272,7 +285,7 @@ done
 # reference pool.
 for f in "$AOS"/docs/adr/*.md; do
   [ -e "$f" ] || continue
-  case "$f" in */_TEMPLATE.md) continue ;; esac
+  case "$f" in */_TEMPLATE.md|*/manual-*.md|*/README.md) continue ;; esac
   set -- "$@" "adr $f"
 done
 

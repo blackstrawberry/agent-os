@@ -11,3 +11,10 @@ desktop.ini
 
 # Scratch worktree used by the release script.
 .agent-os-release-tmp/
+
+# saved by init.sh --update when the replaced block differed -- review, then delete
+CLAUDE.md.aos-prevblock
+# init.sh --update scratch
+*.aos-new
+# init.sh --update scratch
+*.aos-incoming.*
