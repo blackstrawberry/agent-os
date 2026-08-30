@@ -251,6 +251,56 @@ if git rev-parse --git-dir >/dev/null 2>&1 && [ -f "$hook" ]; then
     || report FAIL "core.hooksPath is set" "$AOS/scripts/hooks" "unset -- run: git config core.hooksPath $AOS/scripts/hooks"
 fi
 
+# --- 5d. the pre-commit hook lints a RENAMED prompt doc --------------------
+# Closing a task IS a rename (tasks/ -> tasks/completed/ with status: completed), so a
+# hook that selects files with --diff-filter=ACM never lints the one document the close
+# is about, and reports OK on the rest. Two commits in a throwaway repo, real hook,
+# real git: a valid moved doc must commit, a moved doc with a broken enum must be
+# refused. Checking only the refusal would also pass for a hook that refuses
+# everything (E0004 class), hence both. See E0009.
+if [ -f "$hook" ] && [ -f "$AOS/scripts/check-prompts.sh" ] && command -v git >/dev/null 2>&1; then
+  t=$(mktemp -d) || exit 2
+  doc='---
+type: task
+id: "01"
+title: t
+status: planned
+created: 2026-01-01
+updated: 2026-01-01
+tags: [a]
+area: [meta]
+summary: s
+---
+# t
+'
+  got=$(
+    cd "$t" || exit 9
+    git init -q . 2>/dev/null || exit 9
+    git config user.email t@t; git config user.name t; git config commit.gpgsign false
+    mkdir -p "$AOS/scripts/hooks" "$AOS/prompts/tasks/completed"
+    cp "$root/$hook" "$AOS/scripts/hooks/pre-commit"; chmod +x "$AOS/scripts/hooks/pre-commit"
+    cp "$root/$AOS/scripts/check-prompts.sh" "$AOS/scripts/check-prompts.sh"
+    printf '%s' "$doc" > "$AOS/prompts/tasks/01_t.md"
+    printf '%s' "$doc" | sed 's/^id: "01"/id: "02"/' > "$AOS/prompts/tasks/02_t.md"
+    git add -A . && git commit -qm init 2>/dev/null || exit 9
+    git config core.hooksPath "$AOS/scripts/hooks"        # gate on from here
+    # 1) valid doc, moved and closed -> must commit
+    git mv "$AOS/prompts/tasks/01_t.md" "$AOS/prompts/tasks/completed/01_t.md"
+    sed 's/^status: planned/status: completed/' "$AOS/prompts/tasks/completed/01_t.md" > x && mv x "$AOS/prompts/tasks/completed/01_t.md"
+    git add -A "$AOS/prompts"
+    if git commit -qm close >/dev/null 2>&1; then r1=ok; else r1=refused; fi
+    # 2) moved with a value the linter rejects -> must be refused
+    git mv "$AOS/prompts/tasks/02_t.md" "$AOS/prompts/tasks/completed/02_t.md"
+    sed 's/^status: planned/status: done/' "$AOS/prompts/tasks/completed/02_t.md" > x && mv x "$AOS/prompts/tasks/completed/02_t.md"
+    git add -A "$AOS/prompts"
+    if git commit -qm close2 >/dev/null 2>&1; then r2=ok; else r2=refused; fi
+    printf '%s/%s' "$r1" "$r2"
+  )
+  rm -rf "$t"
+  [ "$got" = "ok/refused" ] && report ok "pre-commit lints a renamed prompt doc" \
+                            || report FAIL "pre-commit lints a renamed prompt doc" "ok/refused (valid move commits, broken move refused)" "${got:-setup failed}"
+fi
+
 # --- 6. the caller's locale does not change the answer --------------------
 # End-to-end, not on the extracted functions: what has to hold is that rank.sh and
 # agent-os-health.sh give the same answer no matter what locale the user's shell is

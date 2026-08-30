@@ -110,7 +110,7 @@ report_theirs() {
   done
   # In the source checkout the two ARE the same file by definition, and a note that can
   # never be acted on is how people learn to skim past this output.
-  if [ "$(pwd)" != "$PLUGIN_DIR" ]      && [ -f "$AOS/vocab.txt" ] && [ -f "$TPL/vocab.txt" ] && cmp -s "$AOS/vocab.txt" "$TPL/vocab.txt"; then
+  if [ "$(pwd -P)" != "$(cd "$PLUGIN_DIR" && pwd -P)" ]      && [ -f "$AOS/vocab.txt" ] && [ -f "$TPL/vocab.txt" ] && cmp -s "$AOS/vocab.txt" "$TPL/vocab.txt"; then
     echo "NOTE   $AOS/vocab.txt is still the shipped file -- seed it with this project's own"
     echo "       terms. Measured: an unseeded alias map costs about 17 points of top-3, and"
     echo "       the failures arrive as ZERO results, which reads as 'no prior work'."

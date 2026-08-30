@@ -20,7 +20,7 @@ if printf '%s\n' "$staged" | grep -q "^$AOS/prompts/"; then
   # the commit hostage to every legacy document -- one install has 268 pre-existing
   # failures, so the hook could never pass there and would simply be turned off.
   # Touched documents are checked strictly, including enum values.
-  changed=$(git diff --cached --name-only --diff-filter=ACM -- "$AOS/prompts" | grep '\.md$')
+  changed=$(git diff --cached --name-only --diff-filter=ACMR -- "$AOS/prompts" | grep '\.md$')
   if [ -n "$changed" ]; then
     # shellcheck disable=SC2086
     sh "$root/$AOS/scripts/check-prompts.sh" $changed || {
