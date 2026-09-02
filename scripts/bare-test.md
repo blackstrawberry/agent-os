@@ -68,6 +68,10 @@ Removing a rule needs evidence exactly as much as adding one did. This is how yo
 5. **Write the numbers down**, in the eval-set's baseline table, including when there was
    no difference. A no-difference result is the finding, not a failed experiment. It is
    the only thing that ever justifies deleting a rule.
+   **Put the model identifier on the row.** This procedure runs "once per model
+   generation"; with no identifier on the baseline row there is nothing for the next
+   generation to differ from, so that trigger can never fire and a deferral that named it
+   as its revisit condition becomes permanent.
 
 ## Size budget
 

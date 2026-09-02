@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "agent-os",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "An agent operating system for legacy / high-ambiguity codebases. Scaffolds frontmatter-scannable task, error and decision docs plus source-of-truth docs, then makes them findable: a generated index carrying weighting signals, a relevance ranker that returns the top few instead of everything, and a per-project alias map so a question in one language reaches documents written in another. Keeps memory honest with a frontmatter linter, recurrence counting that escalates at three repeats, coldness-based compaction (/agent-os:archive), and a health check for what has gone quiet. Three self-maintaining router skills: task-scan, error-check, error-log. Run /agent-os:init.",
   "author": {
     "name": "kimjonghan",
