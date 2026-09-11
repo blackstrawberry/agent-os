@@ -17,13 +17,14 @@ On a big or old codebase, an AI agent's intent leaks: it assumes instead of veri
 
 ## Host support
 
-| Host | Entry point | Persistent project guidance | Repository writes |
+| Host | Entry point | Persistent project guidance | Mutation capability |
 |---|---|---|---|
 | Claude Code | `.claude-plugin/`, `/agent-os:init`, `/agent-os:archive` | `CLAUDE.md` | full local mode |
 | Codex | installed Skill/plugin, `$agent-os` | `AGENTS.md` | full local/Codex mode |
-| ChatGPT | installed Skill such as `agent-os` | Skills are the primary entry point; do **not** assume repository `AGENTS.md` is auto-loaded | capability-dependent; the ordinary GitHub app is read-only |
+| ChatGPT Native | installed plugin or Skill when the current surface exposes it | plugin/Skill | depends on the concrete exposed actions + authorization |
+| ChatGPT Project compatibility | `chatgpt/agent-os-chatgpt.md` + Project instructions | Project files/instructions | depends on connected tools/actions; Project mode alone is not a shell/runtime |
 
-Skills select behavior by **capability**, not by product name. With shell + writable files they run full mode. With repository write actions but no shell they reproduce the same lifecycle using repository tools. With read-only repository access they research prior work/risks and prepare exact task/error updates without claiming those updates were written.
+Skills select behavior by **capability**, not by product name. A connected app or GitHub source does not by itself prove read or write access: use only actions the current surface exposes and the current user is authorized to perform. Without a successful write action, agent-os prepares exact task/error/patch text but does not claim the repository changed.
 
 ## What you get
 
@@ -38,6 +39,8 @@ Skills select behavior by **capability**, not by product name. With shell + writ
 ## Install
 
 Public repository: **https://github.com/blackstrawberry/agent-os**
+
+Choose by **host**, then for ChatGPT by **intent first and capability second**. Plan names are useful hints, but the actual UI/actions available to your account or workspace are the source of truth.
 
 ### Claude Code — plugin install
 
@@ -58,21 +61,27 @@ git clone https://github.com/blackstrawberry/agent-os.git
 claude --plugin-dir "$(pwd)/agent-os"
 ```
 
+First smoke request:
+
+```text
+Use agent-os to inspect related history and known risks before changing this repo.
+```
+
 ### Codex — GitHub Skill install
 
-Codex's built-in `$skill-installer` can install a Skill directly from a GitHub directory. For the minimal agent-os entry point, paste this into Codex:
+Codex's built-in `$skill-installer` can install the canonical entry Skill directly from GitHub:
 
 ```text
 $skill-installer install https://github.com/blackstrawberry/agent-os/tree/main/skills/agent-os
 ```
 
-Restart Codex after installation. Then open an initialized project and either say your request normally or invoke the Skill explicitly:
+Restart Codex after installation. Then open an initialized project and either ask normally or invoke it explicitly:
 
 ```text
 $agent-os inspect the related task, ADR, known risks and past errors before changing this repo
 ```
 
-For a **new project**, the Skill alone is not the project scaffold. Clone the public repository once and run the installer:
+For a **new project**, the Skill alone is not the project scaffold:
 
 ```sh
 git clone https://github.com/blackstrawberry/agent-os.git ~/.local/share/agent-os
@@ -86,21 +95,49 @@ git -C ~/.local/share/agent-os pull --ff-only
 bash ~/.local/share/agent-os/scripts/init.sh --update /absolute/path/to/your/project
 ```
 
-That creates/updates `.agent-os/`, root `CLAUDE.md`, and root `AGENTS.md`. Codex automatically uses the project's `AGENTS.md`; the installed `agent-os` Skill supplies the reusable routing/workflow entry point.
+That creates/updates `.agent-os/`, root `CLAUDE.md`, and root `AGENTS.md`. Codex automatically uses the project's `AGENTS.md`; the installed `agent-os` Skill supplies the reusable workflow entry point.
 
-If **agent-os** is available in your Codex Plugins directory or through a workspace-imported marketplace, you can install the plugin there instead; the Skill-only GitHub route above is the portable public-repo path.
+### ChatGPT — personal use (`Just me`)
 
-### ChatGPT — Skill install
+Use the first path your current surface actually supports:
 
-If your ChatGPT Skills surface supports uploads, download the repository and upload the **`skills/agent-os/` folder** as one Skill:
+1. **Plugin Directory** — if **agent-os is actually listed** and your UI shows an install action, install it there. Do not assume directory visibility means this particular plugin is available.
+2. **Native Skills** — if `Plugins -> Skills -> Create -> Upload from your computer` is available, install the canonical `skills/agent-os/` Skill using the upload format accepted by that surface. Native Skill upload is currently documented for eligible managed-workspace users; availability can change by account/workspace/surface.
+3. **ChatGPT Project compatibility** — if the native paths are unavailable but Projects are available:
+   - Create a new ChatGPT Project.
+   - Upload **`chatgpt/agent-os-chatgpt.md`** from this public repository.
+   - Open **`chatgpt/PROJECT_INSTRUCTIONS.md`** and copy its contents into the Project instructions.
+   - Optionally connect GitHub or another app for live repository context. Inspect the actions actually exposed before treating the connection as readable or writable.
+4. **No Projects either** — this surface is currently unsupported; do not fake an installation.
 
-- Repository: https://github.com/blackstrawberry/agent-os
-- ZIP: https://github.com/blackstrawberry/agent-os/archive/refs/heads/main.zip
-- Skill folder: `skills/agent-os/`
+Project compatibility is intentionally smaller than Native Skills: its explicit profile includes `agent-os`, `task-scan`, `error-check`, and `error-log`. Local-only `agent-os-init` and `agent-os-archive` are not bundled because a Project does not inherently provide shell/hooks/local scripts.
 
-For workspace-managed plugin distribution, an eligible admin can import the GitHub marketplace from `https://github.com/blackstrawberry/agent-os` and keep it synchronized from GitHub. Availability depends on the workspace/product surface.
+First Project smoke request:
 
-After installation, a normal request may route to agent-os implicitly. ChatGPT should enter through the installed Skill; a plain GitHub connection is not treated as writable project state.
+```text
+Use agent-os for this broad request. Check known risks and the strongest related task/ADR/error history first. If search returns an ambiguous zero, use the directory/frontmatter fallback. Do not claim a repository write unless an authorized write action actually succeeds.
+```
+
+### ChatGPT — workspace/team distribution
+
+If the goal is to distribute agent-os to a workspace, check admin intent **before** personal-install options.
+
+If you are an authorized workspace admin and `Workspace settings -> Plugins -> Add -> Import marketplace` is available:
+
+1. Source: `https://github.com/blackstrawberry/agent-os`
+2. Leave Path empty for the repository-root `.agents/plugins/marketplace.json`.
+3. Import the marketplace, then configure installation policy and any app/action permissions in the workspace.
+4. GitHub marketplace sync distributes plugin content; it does **not** grant provider-account access or write permission by itself.
+
+If marketplace import is unavailable or you are not an admin, use only the Native Skill/plugin/Project options actually allowed by workspace policy. Otherwise the surface is unsupported.
+
+Current OpenAI references used for this chooser:
+- Skills: https://help.openai.com/en/articles/20001066-skills-in-chatgpt
+- Plugins: https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex
+- GitHub marketplace import: https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github
+- Projects: https://help.openai.com/en/articles/10169521-projects-in-chatgpt
+
+These product surfaces can change; the decision rule is the capability you can actually see/use, not a hard-coded plan name.
 
 ## Initialize / migrate a project
 
@@ -113,7 +150,8 @@ bash /path/to/agent-os/scripts/init.sh [--no-eval] /path/to/project
 For an existing agent-os project:
 
 ```sh
-bash /path/to/agent-os/scripts/init.sh --update /path/to/project
+git -C ~/.local/share/agent-os pull --ff-only
+bash ~/.local/share/agent-os/scripts/init.sh --update /absolute/path/to/your/project
 ```
 
 `--update` preserves all text outside the `<!-- agent-os:begin -->` / `<!-- agent-os:end -->` markers. A pre-0.8 Claude-only install is migrated by creating the missing `AGENTS.md`; malformed markers abort before either guidance file is partially rewritten.
@@ -127,7 +165,7 @@ After scaffolding:
 
 ## Day to day
 
-There is no required daily command. Talk normally; Skills route the request.
+There is no required daily command. Talk normally; Skills or the Project compatibility instructions route the request.
 
 | Say something like | What runs |
 |---|---|
@@ -135,8 +173,8 @@ There is no required daily command. Talk normally; Skills route the request.
 | "write this up as a task" / "did we do this before?" | `task-scan` |
 | "have I hit this mistake before?" | `error-check` |
 | "log that mistake" | `error-log` |
-| "initialize/update agent-os" | `agent-os-init` / `/agent-os:init` in Claude |
-| "clean up cold memory" | `agent-os-archive` / `/agent-os:archive` in Claude |
+| "initialize/update agent-os" | `agent-os-init` / `/agent-os:init` in Claude; local-capability path only |
+| "clean up cold memory" | `agent-os-archive` / `/agent-os:archive` in Claude; local-capability path only |
 
 Work is sized, not marched through: trivial goes straight to the answer; local work needs prior-error checking; broad work reads known risks, prior tasks/ADRs and relevant error history before implementation.
 
@@ -147,6 +185,9 @@ agent-os/
 ├── .agents/plugins/marketplace.json
 ├── .claude-plugin/{plugin.json,marketplace.json}
 ├── .codex-plugin/plugin.json
+├── chatgpt/
+│   ├── agent-os-chatgpt.md              # generated, ready to upload
+│   └── PROJECT_INSTRUCTIONS.md          # generated, ready to copy
 ├── skills/
 │   ├── agent-os/SKILL.md
 │   ├── agent-os-init/SKILL.md
@@ -157,6 +198,8 @@ agent-os/
 ├── commands/{init.md,archive.md}        # Claude compatibility adapters
 ├── hooks/hooks.json                     # convention hook for plugin hosts
 ├── scripts/
+│   ├── build-chatgpt-project.sh
+│   ├── chatgpt-project-test.sh
 │   ├── init.sh
 │   ├── host-adapter-test.sh
 │   ├── reindex.sh rank.sh
@@ -164,13 +207,14 @@ agent-os/
 │   ├── agent-os-compact.sh agent-os-health.sh
 │   └── portability-test.sh
 ├── templates/
+│   ├── chatgpt/{profile.txt,BUNDLE_HEADER.md,PROJECT_INSTRUCTIONS.md}
 │   ├── AGENT_PROTOCOL.section.md        # canonical protocol
 │   ├── CLAUDE.section.md
 │   └── AGENTS.section.md
 └── docs/
 ```
 
-The lab repository dogfoods root `CLAUDE.md` and `AGENTS.md`, but those root files are private development state. The public release ships the templates and adapters, not the lab's project memory.
+The lab repository dogfoods root `CLAUDE.md` and `AGENTS.md`, but those root files and `.agent-os/` are private development state. The public release ships only classified CORE paths, including the generated `chatgpt/` artifacts.
 
 ## Verification
 
@@ -178,9 +222,10 @@ For distribution changes:
 
 ```sh
 sh scripts/host-adapter-test.sh
+sh scripts/chatgpt-project-test.sh
 ```
 
-It checks protocol drift, Claude/OpenAI manifest name+version drift, shared Skill metadata, fresh init, Claude-only migration, outside-marker preservation and malformed-marker fail-closed behavior. `portability-test.sh` remains the machine/awk/locale gate for project scripts.
+`host-adapter-test.sh` preserves the Claude/Codex baseline: protocol drift, manifest name/version, convention hook behavior, shared Skill metadata, fresh init and migration. `chatgpt-project-test.sh` checks the explicit Project profile, deterministic rebuild, tracked-artifact drift, public provenance, size budget, private-lab leakage, capability guardrails, and missing-Skill fail-closed behavior. `portability-test.sh` remains the machine/awk/locale gate.
 
 ## Conventions
 

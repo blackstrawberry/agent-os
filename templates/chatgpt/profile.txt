@@ -1,0 +1,6 @@
+# ChatGPT Project compatibility profile.
+# One canonical Skill slug per line. Adding a Skill requires explicit review.
+agent-os
+task-scan
+error-check
+error-log

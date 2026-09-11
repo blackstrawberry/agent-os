@@ -8,109 +8,73 @@ Claude Code・Codex・ChatGPT は薄いアダプタから同じ記憶を読む�
 
 ---
 
-## 1. ホストアダプタを選ぶ
+## 1. Host を選び、ChatGPT では目的から選ぶ
 
-| ホスト | インストール/入口 | プロジェクト継続ガイダンス | モード |
+| ホスト | インストール/入口 | 継続ガイダンス | モード |
 |---|---|---|---|
 | Claude Code | Claude plugin, `/agent-os:init` | root `CLAUDE.md` | local full mode |
 | Codex | GitHub Skill/plugin, `$agent-os` | root `AGENTS.md` | Codex/local full mode |
-| ChatGPT | インストール済み Skill (`agent-os`) | Skill が主入口。repo の `AGENTS.md` 自動読込を前提にしない | capability 次第 |
+| ChatGPT Native | 現在の surface でインストール可能な plugin/Skill | plugin/Skill | capability 次第 |
+| ChatGPT Project compatibility | `chatgpt/agent-os-chatgpt.md` + Project instructions | Project files/instructions | 制限付き compatibility mode |
 
-通常の ChatGPT GitHub app は read-only。そこでも prior task/error/known-risk の調査と具体的な
-変更案の作成はできるが、task 作成・close・commit・push が実際に行われたとは主張しない。
-現在の surface に repository write または Codex/Work 相当の実行環境があれば、同じ Skills が
-writable mode で動く。
+ChatGPT では capability の前に **利用目的 (intent)** を分ける。
+
+- **個人利用**: 実際に利用可能な Directory plugin → Native Skill → Project compatibility の順で最初に使える経路を選ぶ。
+- **workspace/team 配布**: 権限のある admin として marketplace import が使えるかを先に確認し、使えなければ workspace policy が許可する Native Skill/plugin/Project 経路だけを使う。
+
+その後はプラン名ではなく **実際の capability/action/authorization** を見る。GitHub/app/plugin が接続されているというだけで read/write を推測しない。成功した write action が無い限り Task/file/status/commit/push が変わったとは主張しない。
 
 ---
 
-## 2. 全体ワークフローを一目で見る
+## 2. 全体ワークフロー
 
-agent-os の目的はすべての作業を重くすることではない。**作業規模に応じて必要な分だけ過去の文脈を取得し、重要な判断点だけ人が承認する**ための仕組みである。
+agent-os は全ての作業を重くする仕組みではない。作業規模に応じて必要な分だけ過去の文脈を取得する。
 
 ```mermaid
 flowchart TD
-    A[ユーザー依頼] --> B{作業規模を判定}
-    B -->|軽微な作業<br/>Trivial| T[そのまま回答/修正]
-    B -->|局所的な修正<br/>Local| E[関連する過去 Error を確認]
-    B -->|広範囲な変更<br/>Broad| K[Known Risks + Task/ADR + Error を取得]
+    A[ユーザー依頼] --> B{作業規模}
+    B -->|Trivial| T[そのまま回答/修正]
+    B -->|Local| E[関連する過去 Error を確認]
+    B -->|Broad| K[Known Risks + Task/ADR + Error を取得]
 
-    K --> P[Task Scope / Plan を整理]
+    K --> P[Task Scope / Plan]
     P --> G1{{Human Gate 1<br/>範囲と計画を承認}}
     G1 -->|修正が必要| P
-    G1 -->|「進めて」| I[実装]
+    G1 -->|進める| I[実装]
 
     E --> I
     T --> V[必要な検証]
     I --> V[テスト / 検証 / diff]
 
-    V --> D[Docs 同期 + 必要なら Error/ADR 記録]
+    V --> D[Docs 同期 + 必要なら Error/ADR]
     D --> X{外部影響・不可逆操作?}
-    X -->|Yes| G2{{Human Gate 2<br/>結果・diff・影響を承認}}
+    X -->|Yes| G2{{Human Gate 2<br/>結果と影響を承認}}
     X -->|No| C[Task closeout]
     G2 -->|修正が必要| I
-    G2 -->|「終了処理して」| C
+    G2 -->|終了| C
 
     C --> F[status: completed<br/>completed/ へ移動 + index/lint]
 ```
 
-### 作業規模の3分類
-
-英語名は内部ラベルとして残しているが、意味は次のように考えればよい。
-
-| 分類 | 日本語での意味 | 目安 | agent-os の動き |
-|---|---|---|---|
-| **軽微な作業（Trivial）** | 過去の設計や失敗を知らなくても安全に処理できる小さな作業 | 誤字修正、1行の回答、単純なコマンド、明白な小変更 | 過去記録を探さず、そのまま処理 |
-| **局所的な修正（Local）** | 変更箇所と原因がおおむね明確で、影響範囲が狭い修正 | 1ファイル前後の明確な不具合、特定 API の validation 修正、1コンポーネント内の変更 | 主に過去の `error` だけ確認。Task 作成は任意 |
-| **広範囲な変更（Broad）** | 実装前に既存設計・過去の判断・既知の罠を知る必要がある変更 | 新機能、複数モジュール変更、設計変更、DB migration、認証、release、戻しにくい変更 | known risks、関連 Task/ADR、過去 Error、Source of Truth を確認して Scope/Plan を作る |
-
-ファイル数だけでは決めない。たとえば変更が1行でも、DB migration・データ削除・認証・外部公開のように**失敗したときの影響が大きい作業は「広範囲な変更」として扱う**方が安全である。
-
-判断の軸はおおむね次の4つ。
-
-- **影響範囲**: 他の画面・API・データ・利用者まで影響するか
-- **不確実性**: 原因や正しい設計がまだ明確でないか
-- **過去の判断との関係**: ADR や以前の Task を知らないと同じ議論を繰り返しそうか
-- **失敗コスト**: rollback が難しい、外部公開される、データを壊す可能性があるか
-
-迷う場合は基本的に小さい分類から始める。ただし、失敗コストが高い作業は無理に小さく扱わず Broad 側に寄せる。
-
-### Human Gate ではこう伝える
-
-**Gate 1 — まだ実装させたくない場合**
+Gate 1 の例:
 
 ```text
 agent-os 基準でこの作業をタスク化し、関連する過去記録を確認して Scope と Plan まで作って。まだ実装しないで。
 ```
 
-計画が良ければ:
-
-```text
-OK。この計画どおり進めて。
-```
-
-**Gate 2 — 実装後、すぐ close したくない場合**
+Gate 2 の例:
 
 ```text
 実装結果、検証結果、変更 diff、残っているリスクを整理して。まだ終了処理しないで。
 ```
 
-確認後:
-
-```text
-問題ない。必要な docs/error/ADR を同期してタスクを終了処理して。
-```
-
-小さな変更で毎回この gate を強制する必要はない。広範囲な変更（Broad）、release、削除、migration、戻しにくい変更で特に価値が高い。
-
 ---
 
-## 3. プロジェクト初回セットアップ
+## 3. 初回セットアップ
 
 公開リポジトリ: **https://github.com/blackstrawberry/agent-os**
 
 ### Claude Code
-
-そのまま貼り付ける:
 
 ```text
 /plugin marketplace add blackstrawberry/agent-os
@@ -118,17 +82,19 @@ OK。この計画どおり進めて。
 /agent-os:init
 ```
 
-`blackstrawberry/agent-os` は GitHub 用の公式な `owner/repo` 省略記法であり、`https://github.com/...git` の完全 URL は必須ではない。GitHub 以外の Git サーバーでは完全な Git URL を指定できる。
+最初の smoke:
+
+```text
+この repo を変更する前に agent-os で関連する過去記録と known risks を確認して。
+```
 
 ### Codex
-
-公開 GitHub から agent-os の入口 Skill を直接インストールする。
 
 ```text
 $skill-installer install https://github.com/blackstrawberry/agent-os/tree/main/skills/agent-os
 ```
 
-インストール後に Codex を再起動する。新規 project では project scaffold も別途作成する。
+Codex を再起動する。新規 project では scaffold も作る。
 
 ```sh
 git clone https://github.com/blackstrawberry/agent-os.git ~/.local/share/agent-os
@@ -142,74 +108,74 @@ git -C ~/.local/share/agent-os pull --ff-only
 bash ~/.local/share/agent-os/scripts/init.sh --update /absolute/path/to/your/project
 ```
 
-Codex は初期化済み project の root `AGENTS.md` を自動的に読む。Plugins 画面または workspace marketplace で agent-os plugin 全体を使える環境なら、そこからインストールしてもよい。
+Codex は初期化済み project の root `AGENTS.md` を自動的に読む。
 
-### ChatGPT
+### ChatGPT — 個人利用
 
-Skills upload が使えるアカウントなら、公開 repository の `skills/agent-os/` folder を一つの Skill として upload する。
+現在の surface で実際に利用できる最初の経路を使う。
 
-- Repository: https://github.com/blackstrawberry/agent-os
-- ZIP: https://github.com/blackstrawberry/agent-os/archive/refs/heads/main.zip
-- Skill folder: `skills/agent-os/`
+1. **Plugin Directory**: agent-os 自体が一覧にあり Install action がある場合だけインストールする。
+2. **Native Skill**: `Plugins -> Skills -> Create -> Upload from your computer` が表示される場合、canonical `skills/agent-os/` をその surface が受け付ける形式でインストールする。
+3. **Project compatibility**: native 経路が無く Projects が使える場合:
+   - 新しい Project を作る
+   - `chatgpt/agent-os-chatgpt.md` を upload
+   - `chatgpt/PROJECT_INSTRUCTIONS.md` の内容を Project instructions にコピー
+   - 必要なら GitHub/app を接続し、実際に expose された action を確認して read/write を判断する
+4. **Projects も無い**: 現在の surface は unsupported。インストール済みのように装わない。
 
-workspace 管理者は対応環境で GitHub marketplace を import し、GitHub と同期できる。
+Project compatibility の初期 profile は `agent-os`, `task-scan`, `error-check`, `error-log` のみ。`agent-os-init` と `agent-os-archive` は Project 自体が shell/hooks/local scripts を提供しないため含めない。
+
+Project smoke:
+
+```text
+この broad request に agent-os を使って。known risks と最も関連する task/ADR/error を先に確認し、検索 0 件が indexing 問題か不明なら directory/frontmatter fallback を使って。authorized write action が実際に成功していない限り repo を変更したとは言わないで。
+```
+
+### ChatGPT — workspace/team 配布
+
+権限のある admin で `Workspace settings -> Plugins -> Add -> Import marketplace` が表示される場合:
+
+1. Source: `https://github.com/blackstrawberry/agent-os`
+2. repository root の `.agents/plugins/marketplace.json` を使うため Path は空にする。
+3. marketplace を import/sync する。
+4. installation policy と provider/app/action 権限は別途設定する。marketplace sync 自体は account access や write permission を付与しない。
+
+admin でない、または import capability が無い場合は workspace policy が許可する Native Skill/plugin/Project 経路だけを使う。全て無ければ unsupported。
+
+現在確認している OpenAI docs:
+- Skills: https://help.openai.com/en/articles/20001066-skills-in-chatgpt
+- Plugins: https://help.openai.com/en/articles/20001256-plugins-in-chatgpt-and-codex
+- GitHub marketplace import: https://help.openai.com/en/articles/20001504-importing-and-syncing-plugin-marketplaces-from-github
+- Projects: https://help.openai.com/en/articles/10169521-projects-in-chatgpt
+
+製品 UI/policy は変わり得るため、プラン名を routing key として hard-code しない。
 
 ### Shell から直接初期化
-
-checkout path が分かっていれば host を問わず:
 
 ```sh
 bash /path/to/agent-os/scripts/init.sh [--no-eval] /path/to/project
 bash /path/to/agent-os/scripts/init.sh --update /path/to/project
 ```
 
-installer は `.agent-os/` と root `CLAUDE.md`/`AGENTS.md` を作る。両ファイルの agent-os 区間は
-一つの canonical protocol から生成され、`--update` は marker 外の既存テキストを保持する。
-0.8 より前の Claude-only project には欠けた `AGENTS.md` が追加される。marker が壊れている
-場合は片方だけ更新した状態を残さず中断する。
+`init.sh` は `.agent-os/`, root `CLAUDE.md`, root `AGENTS.md` を一つの canonical protocol から作る。`--update` は marker 外のユーザーテキストを保持し、malformed marker は partial write 前に中断する。
 
-その後:
-
-1. 実 repo を scan して `.agent-os/docs/` Source of Truth を作る
-2. 実際に起きた失敗から eval set を作る
-3. `git config core.hooksPath .agent-os/scripts/hooks`
-4. 新しい machine では `sh .agent-os/scripts/portability-test.sh`
-5. project/domain の別名を `.agent-os/vocab.txt` に入れる
+その後、実 repo scan から Source of Truth を作り、実際の失敗から eval set を作成し、`git config core.hooksPath .agent-os/scripts/hooks` を設定し、新しい machine で portability を実行し、`.agent-os/vocab.txt` に project/domain の別名を追加する。
 
 ---
 
-## 4. 広範囲な変更（Broad）を実際に運用する流れ
+## 4. Broad 作業の運用
 
-**ユーザー:** 「詳細ページの売買状態が一覧と違う。合わせて。」
-
-編集前に `07_known-risks.md` を読み、関連 task/ADR と過去 error を探す。shell mode では:
+変更前に `07_known-risks.md` を読み、関連 Task/ADR と過去 Error を探す。shell mode では:
 
 ```sh
 sh .agent-os/scripts/rank.sh -q "<request words>" -f "<paths>" -n 8
 ```
 
-上位3件まで開く。shell が無ければ repository search で task/error/ADR frontmatter を探し、
-file path と root cause の一致を優先する。search が 0 件でも repository code search が unindexed の可能性があるため、すぐに「過去記録なし」とは判断しない。
+上位3件まで開く。shell が無ければ repository tool で task/error/ADR frontmatter を検索し、file path/root cause の一致を優先する。検索 0 件が indexing 問題か区別できなければ E0011 の known-directory + filename/frontmatter/path fallback を使う。
 
-**ユーザー:** 「先にタスク化して。」
+writable host は `.agent-os/prompts/tasks/NN_slug.md` を実際に作る。write action が無い host は正確な path/frontmatter/body を提示するが、書き込んだとは言わない。
 
-writable host は `.agent-os/prompts/tasks/NN_slug.md`, `status: planned` を実際に作る。
-read-only host は同じ frontmatter/本文案を返し、**書き込んでいないことを明示**する。
-
-> **Human Gate 1 — Scope / Plan 承認**  
-> 推奨プロンプト: `タスクと計画まで整理して。実装は確認してから指示する。`
-
-**ユーザー:** 「進めて。」
-
-実装し、検証済みの decision/error を記録し、危険な変更前には prior error を再確認する。
-
-> **Human Gate 2 — Verification / diff 承認**  
-> 推奨プロンプト: `検証結果と diff を先に見せて。まだ close しないで。`
-
-**ユーザー:** 「終了処理して。」
-
-writable mode は docs sync → 必要なら error/ADR → `status: completed` → `completed/` 移動 → lint/index 確認。
-read-only mode は同じ closeout checklist を提示するだけで、適用したとは言わない。
+実装後、writable mode は docs sync → 必要なら Error/ADR → `status: completed` → `completed/` 移動を行う。non-writable mode は同じ closeout 変更案を提示する。
 
 ---
 
@@ -221,54 +187,41 @@ read-only mode は同じ closeout checklist を提示するだけで、適用し
 | 「タスク化 / 前にやった?」 | `task-scan` |
 | 「このミスは前にも?」 | `error-check` |
 | 「今のミスを記録」 | `error-log` |
-| 「agent-os を初期化/更新」 | `agent-os-init` (Claude: `/agent-os:init`) |
-| 「cold memory を整理」 | `agent-os-archive` (Claude: `/agent-os:archive`) |
-
-作業は手順ではなく規模で分ける。**軽微な作業（Trivial）はそのまま処理、局所的な修正（Local）は主に過去 Error を確認、広範囲な変更（Broad）は known risks + 関連 Task/ADR + Error history を先に確認する。**
+| 「agent-os を初期化/更新」 | `agent-os-init` (Claude: `/agent-os:init`) — local capability が必要 |
+| 「cold memory を整理」 | `agent-os-archive` (Claude: `/agent-os:archive`) — local capability が必要 |
 
 ---
 
 ## 6. Capability mode
 
-**Full mode** — shell + writable files。script/hook/task lifecycle をそのまま実行。
+**Full mode** — shell + writable files。script/hook/task lifecycle をそのまま実行する。
 
-**Repository mode** — repo read/write はあるが shell はない。同じファイルを repository tool で
-検索・編集し、実行していない script の結果を捏造しない。
+**Repository mode** — repository tool はあるが shell は無い。現在実際に expose・authorization された read/write action だけを使い、実行できない script の結果を捏造しない。
 
-**Read-only mode** — 検索/読取のみ。関連記憶を限定的に取得し、具体的な edit を準備する。
-file/status/commit/push が変わったとは言わない。
+**Read-only mode** — search/read のみ。関連記憶を限定的に取得し、正確な edit を準備する。file/status/commit/push が変わったとは言わない。
+
+**Project compatibility mode** — Project files/instructions で同じ bounded-memory workflow を route する。shell/hooks/local scripts/repository mutation は別途接続された tool が実際に提供する場合だけ使える。Native Skill parity は主張しない。
 
 ---
 
 ## 7. メモリ保守
 
-`agent-os-health.sh` は read-only。
-
-| 警告 | 対応 |
-|---|---|
-| docs が index より新しい | `reindex.sh` |
-| cold docs / index 予算超過 | archive preview、durable lesson を先に昇格 |
-| recurrence 3+ 未昇格 | known-risk または mechanical gate |
-| 長期間 open の task | close または blocked 理由を記録 |
-| pin 過多 | 永久 load-bearing でないものは外す |
-| eval set 空 | 実際の known-answer case を追加 |
-| protocol/skill 予算超過 | append し続けず規則を置換 |
-
-古いだけでは cold にならない。archive 後も全文は git history に残る。
+`agent-os-health.sh` は read-only。stale index、cold memory budget、recurrence 3+ の未昇格、長期 open Task、over-pinning、empty eval set、prompt budget drift を確認する。durable lesson を先に昇格してから archive する。
 
 ---
 
 ## 8. 配布検証
 
-plugin maintainer は:
-
 ```sh
 sh scripts/host-adapter-test.sh
+sh scripts/chatgpt-project-test.sh
 ```
 
-canonical/Claude/AGENTS protocol drift、Claude/OpenAI manifest name/version drift、Skill metadata、
-fresh init、marker 外テキスト保持、Claude-only migration、malformed marker の fail-closed を検査する。
-OS/awk/locale 差は `portability-test.sh` が担当する。
+`host-adapter-test.sh` は Task 26 の Claude/Codex baseline を守る: protocol/template drift、plugin name/version、convention hook behavior、Skill metadata、fresh init/update migration、fail-closed host file handling。
+
+`chatgpt-project-test.sh` は Task 27 を検証する: explicit Project allowlist、local-only Skill 除外、deterministic rebuild、tracked artifact drift、public version/source provenance、byte/token budget、private lab leakage、capability guardrail、missing-Skill fail-closed。
+
+`portability-test.sh` は shell/awk/locale portability gate。public release は CORE build 前に二つの distribution fixture を両方実行する。
 
 ---
 
@@ -276,18 +229,17 @@ OS/awk/locale 差は `portability-test.sh` が担当する。
 
 | 項目 | 意味 |
 |---|---|
-| `agent-os` | 共有 protocol/router Skill |
-| `agent-os-init` | cross-host init/update |
-| `agent-os-archive` | cold memory 管理 |
-| `task-scan` | prior task/ADR + task lifecycle |
-| `error-check` | 作業前の過去ミス確認 |
-| `error-log` | ミス/再発の構造化記録 |
-| `CLAUDE.md` | Claude view |
-| `AGENTS.md` | Codex view |
-| `.agent-os/docs/` | 検証済み Source of Truth |
-| `07_known-risks.md` | 罠を規則へ昇格したファイル |
+| `agent-os` | 共通 protocol/router Skill |
+| `task-scan` | prior Task/ADR + Task lifecycle |
+| `error-check` | 作業前の過去 Error 確認 |
+| `error-log` | Error/recurrence の構造化記録 |
+| `agent-os-init` / `agent-os-archive` | local-capability init/maintenance |
+| `CLAUDE.md` / `AGENTS.md` | canonical protocol の Claude/Codex view |
+| `chatgpt/agent-os-chatgpt.md` | generated ready-to-upload Project bundle |
+| `chatgpt/PROJECT_INSTRUCTIONS.md` | generated Project bootstrap |
+| `.agent-os/docs/` | verified Source of Truth |
 | `rank.sh` | bounded relevance retrieval |
-| `host-adapter-test.sh` | host/plugin 配布 gate |
-| `portability-test.sh` | machine portability gate |
+| `host-adapter-test.sh` | Claude/Codex distribution gate |
+| `chatgpt-project-test.sh` | ChatGPT Project distribution gate |
 
 設計理由は [CONCEPT.ja.md](CONCEPT.ja.md) を参照。
