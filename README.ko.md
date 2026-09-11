@@ -39,6 +39,8 @@ Claude Code에 아래를 그대로 붙여넣으면 된다.
 /agent-os:init
 ```
 
+`blackstrawberry/agent-os`는 Claude Code가 공식 지원하는 GitHub `owner/repo` 단축형이다. GitHub 저장소에서는 `https://github.com/...git` 전체 주소가 **필수는 아니며**, GitHub가 아닌 Git 서버 등을 사용할 때는 전체 Git URL을 사용할 수 있다.
+
 개발 checkout을 직접 로드하려면:
 
 ```sh
