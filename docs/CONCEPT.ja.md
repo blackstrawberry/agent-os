@@ -1,93 +1,167 @@
-# agent-os の核心アイデア
+# agent-os の考え方
 
-**言語:** [English](CONCEPT.md) | [한국어](CONCEPT.ko.md) | 日本語
+**Languages:** [English](CONCEPT.md) | [한국어](CONCEPT.ko.md) | 日本語
 
-> このプラグインが*なぜ*この形なのかを理解し、採用するか判断したい人向け。
+> agent-os が *なぜ* この構造なのか、そして自分のプロジェクトに合うかを判断したいときに読む文書です。
 
 ## 問題
 
-大規模・古い・雑然としたコードベースでは、AIエージェントの意図がぶれる。確認せず推測し、毎セッション同じ文脈を作り直し、すでにしたミスを繰り返し、ドキュメントが陳腐化して逆に誤答を誘導するまで放置する。ボトルネックはモデルの知能ではなく、**リクエストを正しい知識へ繋ぐ構造の欠如**だ。
+大きい・古い・曖昧さの多いコードベースでは、AI エージェントは意図を失いやすくなります。セッションごとに同じ文脈を作り直し、以前と同じミスを繰り返し、古くなったドキュメントを信じて誤った方向へ進むことがあります。
 
-生の履歴の山(古いコミット、古いチケット、数千の過去クエリ)はこれを解決しない。agent-os が借りている発想 — Anthropic の*スキル(skill)*構築に関する記事から — は、モデルに生の履歴を増やしても精度はほとんど上がらず、精度を押し上げるのは**構造化された手続き知識**だ、というものだ —「ここにデータがある」ではなく「専門家はこう解いていく」。その手続き知識こそ*スキル*である。agent-os はその発想を日常のコーディング作業に軽量に — そしてまだ未計測のまま — 適用したものだ。実際に役立つかは Validation 層で*あなたの*プロジェクトで測定する。
+多くの場合、ボトルネックはモデルの知能ではなく、**新しい依頼を正しいプロジェクト知識へつなぐ持続的な構造がないこと**です。
 
-## モデル: 4層構造
+過去の会話やコミットを大量に残すだけでは解決しません。agent-os は代わりに、検証済みの事実、過去の意思決定、以前の失敗、継続的なリスク、そして新しい作業の前に関連情報だけを限定的に取り出す方法を構造化して保存します。
 
+## モデル: 4 レイヤー
+
+```text
+Foundation / adapters   canonical protocol + CLAUDE.md / AGENTS.md / installed Skills
+Source of Truth          .agent-os/docs/
+Skills                   skills/
+Validation               .agent-os/prompts/eval/
 ```
-Foundation      CLAUDE.md     エージェントが常に従う作業プロトコル
-Source of Truth .agent-os/docs/         システムに関する唯一の検証済み記述
-Skills          .claude/...   再利用「働き方」手続き (ルーター + クックブック)
-Validation      .agent-os/prompts/eval  システムが依然機能することを示す正解型チェック
+
+### 1. Foundation / host adapters
+
+AI 製品ごとに別々のポリシーを持つのではなく、**1 つの運用プロトコル**を持ちます。
+
+`templates/AGENT_PROTOCOL.section.md` が canonical protocol source です。Claude Code は root `CLAUDE.md`、Codex は root `AGENTS.md` を通じて同じプロトコルを受け取ります。ChatGPT ではリポジトリの `AGENTS.md` が自動で読み込まれるとは仮定しないため、インストール済みの `agent-os` Skill が主な入口になります。
+
+アダプターは意図的に薄く保ちます。製品ごとの読み込み仕様は変わっても、プロジェクトメモリは変わるべきではないからです。
+
+### 2. Source of Truth
+
+`.agent-os/docs/` には検証済みのプロジェクト知識を置きます。アーキテクチャ、規約、known risks、ADR などです。ただし ground truth は常にコードです。コードと docs が矛盾した場合はコードを信頼し、書き込み可能な変更の中で docs も同時に直します。
+
+`07_known-risks.md` は特別です。個別の error 文書が「一度何が起きたか」を記録するのに対し、known-risks は繰り返した、または重要な教訓を「今後守るべきルール」へ昇格させます。
+
+### 3. Shared Skills
+
+`skills/` は Claude Code、Codex、ChatGPT、および互換ホストで共有します。現在の agent-os は 6 つの Skill を提供します。
+
+- `agent-os` — メインプロトコル / ルーター
+- `agent-os-init` — agent-os の初期化 / 更新
+- `agent-os-archive` — cold-memory archive の preview / apply
+- `task-scan` — 関連する過去作業・意思決定の取得
+- `error-check` — 過去のミス・known risk の取得
+- `error-log` — 新しいミスの記録、または recurrence の更新
+
+Skill は製品名ではなく **実際の capability** によって動作を選びます。shell + write が使えるなら scripts と完全な lifecycle を使い、repository tool だけならそのツールで読み書きし、read-only host では調査と正確な変更案だけを出して commit/push したと偽りません。
+
+### 4. Validation
+
+`.agent-os/prompts/eval/` は offline known-answer の検証レイヤーです。ルールや retrieval を変えるときは、実際にプロジェクトで起きた失敗を使って改善したかを確認します。テストできないルールは、最終的に prompt の死んだ重みになります。
+
+## agent-os がインストール・配布するもの
+
+プロジェクトに agent-os を初期化すると、次が作られます。
+
+- `.agent-os/prompts/tasks/` と `completed/` — 構造化された task memory
+- `.agent-os/prompts/errors/` — incident / recurrence memory
+- `.agent-os/docs/` と `.agent-os/docs/adr/` — source of truth と意思決定記録
+- `.agent-os/vocab.txt` — プロジェクト / ドメイン / 多言語エイリアス
+- `.agent-os/scripts/` — ranking, indexing, lint, health, compaction, portability ツール
+- `.agent-os/scripts/hooks/pre-commit` — opt-in mechanical gate
+- root `CLAUDE.md`, `AGENTS.md` — 同じプロトコルの同期された host view
+
+配布リポジトリには host adapter 自体も含まれます。
+
+- `.claude-plugin/` — Claude Code パッケージング
+- `.codex-plugin/` — OpenAI / Codex パッケージング
+- `.agents/plugins/marketplace.json` — OpenAI marketplace metadata
+- `skills/` — 上記 6 つの shared Skills
+- `commands/` — init/archive などの Claude compatibility commands
+- `hooks/hooks.json` — convention で発見される session hook
+- `templates/` — canonical protocol と scaffold templates
+- `scripts/host-adapter-test.sh` — cross-host distribution fixture
+
+private 開発リポジトリには、さらに自己 dogfood 用の `.agent-os/`、root `CLAUDE.md`、root `AGENTS.md` があります。この 3 つは private であり、public 配布物へ漏れてはいけません。
+
+## 作業プロトコル
+
+すべての依頼を同じ儀式へ通すのではなく、作業サイズで分けます。
+
+- **Trivial** — そのまま処理
+- **Local** — 通常は関連する error / known risk だけ先に確認
+- **Broad** — known risks、関連 task / ADR / error を確認し、実コードを検証してから実装、docs 同期、検証後に task closeout
+
+重要なのは **bounded retrieval** です。メモリ全体をコンテキストへ投入することではありません。
+
+shell-capable mode では `rank.sh` が生成済み index をスコアリングし、上位の少数だけを開きます。repository mode では frontmatter/search を使います。リポジトリが未インデックスなどの理由で code search が曖昧な 0 件を返す場合、directory/frontmatter fallback を使って限定的に探索し、「履歴がない」と誤判定しません。
+
+## メモリ: recall より ranking
+
+`.agent-os/prompts/index.jsonl` は task/error/ADR の構造化カタログです。`rank.sh` は query term、vocab alias、file path、recurrence などのシグナルから候補順を決めます。
+
+重要なのは、retrieval の問題が「見つからない」より **「見つかりすぎる」** ことが多いからです。関連候補 50 件のうち正解が 37 番目なら、実質的には失敗です。
+
+`vocab.txt` は文書を全部再タグ付けせず、**query を拡張**します。韓国語、日本語、英語、製品名、旧名称、略語を 1 つの概念へつなげられます。
+
+## Error は予防ルールへ昇格する
+
+error 文書には root cause、関連ファイル、recurrence、severity、fix を記録します。同じ root cause が再発した場合は別文書を作らず、既存文書の recurrence を上げます。そうすることで「同じ問題が何度も起きている」ことが見えるようになります。
+
+教訓は次のように抽象度を上げます。
+
+```text
+incident -> recurring error -> known risk / mechanical gate
 ```
 
-- **Foundation** — 常時ロードされるガイド(`CLAUDE.md`)。すべてのリクエストに対し: 過去タスクのスキャン → SoT 読み → 過去エラー点検 → 実行 → 新エラー記録 → docs 同期。最上位ルーター。
-- **Source of Truth** — `.agent-os/docs/` にアーキテクチャ・コアロジック・規約・既知リスク。推測ではなく実コードのスキャンで作成し、エージェントが方向づけのため*まず参照*する対象。ただし ground truth は依然としてコードだ: コードと docs が異なればコードを信頼し **docs を修正する**。
-- **Skills** — エージェントが呼ぶ小さな手続き。Anthropic の区分に倣い2種: 文脈のおおよそ正しい断片を指す*ルーター*スキル(「受付」)、検証済みワークフローを走らせる*クックブック*スキル。agent-os はルーター3種を提供: `task-scan`, `error-check`, `error-log`。
-- **Validation** — オフライン評価セット(`.agent-os/prompts/eval/`)。プロジェクトの実際の罠から取った正解型の設問。.agent-os/docs/スキルの変更が改善かを推測でなく証明で確認。
+目的は文章を無限に増やすことではなく、繰り返す再発見コストを、より安い予防メカニズムへ変えることです。
 
-## agent-os が実際に入れるもの
+## Bounded memory と compaction
 
-- `.agent-os/prompts/tasks/` と `.agent-os/prompts/errors/` — すべてのリクエストとミスを **frontmatter** 付きの小さな Markdown で捕捉。数十件を一度にスキャンして関連へジャンプ。完了タスクは `.agent-os/prompts/tasks/completed/` へアーカイブ。
-- `.agent-os/docs/` — 初回の全体スキャンで埋める SoT の骨組み。`07_known-risks.md`(罠を規則として)と `adr/`(**意思決定: 何を却下し、何が変われば再検討するか**)を含む。
-- `.agent-os/vocab.txt` — 概念を言語ごとの表記に結ぶプロジェクト別の別名マップ。ある言語の質問が別言語で書かれた文書に届く。
-- スキル3種 — `task-scan`(関連する過去作業と却下履歴の発見)、`error-check`(ミスの再発防止)、`error-log`(エージェントが自分のミスを記録)。
-- `.agent-os/scripts/` — `reindex.sh`(インデックス生成)・`rank.sh`(ランキング)・`check-prompts.sh`(frontmatter lint)・`tags-gap.sh`(誰にも見つけられない文書)・`agent-os-compact.sh`(コールドのアーカイブ)・`agent-os-health.sh`(静かになったものの報告)・`bare-test.md`(その規則はまだ価値があるか)。
-- `.agent-os/scripts/hooks/pre-commit` — opt-in の**強制同期**フック: **そのコミットが触れる文書だけ**を厳格に検査(enum・日付・プレースホルダ)し、コード変更に docs 未更新で警告。既存プロジェクトが自らの過去で止まらない。
-- プロジェクト `CLAUDE.md` に追記されるプロトコル節 — **サイズ予算のもとで。**
+古いだけでは cold とは見なしません。completed/resolved 文書のうち、unreferenced、unpinned、十分に非アクティブなものだけが compaction 候補になります。
+
+`agent-os-health.sh` は stale index、cold candidate、長期間開いた task、over-pinning、未昇格 recurrence、prompt budget 問題を報告します。`agent-os-archive` は適用前に preview します。何かが黙って自動削除される設計ではありません。
+
+active memory から下げても全文は git history から復元できます。
+
+## なぜ host-neutral core なのか
+
+Claude Code、Codex、ChatGPT は読み込み・実行方式が違います。
+
+- Claude Code は `CLAUDE.md` と Claude plugin command が自然です。
+- Codex は `AGENTS.md` と Skills が自然です。
+- ChatGPT は installed Skills が主な入口で、環境によって read-only repository access からより豊富な write capability まで差があります。
+
+しかしこれは **adapter の違い** であって、プロジェクトメモリを fork する理由ではありません。
+
+`.agent-os/` と `skills/` を共有すれば、どの agent が作業しても task は 1 つ、error は 1 つ、ADR は 1 つ、durable lesson も 1 つです。この長期アーキテクチャ判断は ADR-0004 に記録されています。
+
+## Distribution correctness も機能の一部
+
+このプロジェクトでは過去に、gate が存在していても実際には走っていなかったり、convention hook を manifest に重複宣言して plugin 全体が load failure になったことがあります。そのため cross-host compatibility も機械的に検証します。
+
+- canonical protocol / Claude / AGENTS drift
+- fresh init / update preservation
+- malformed-marker negative fixture
+- Skill metadata
+- Claude/OpenAI manifest name/version sync
+- convention-hook duplicate
+- public release private-path leak
+
+green だけでは十分ではありません。意図的に壊した fixture が本当に失敗して初めて gate が生きていると判断します。
 
 ## 設計原則
 
-1. **Frontmatter がインデックス。** いくつかの構造化フィールド(`tags`, `area`, `files`, `summary`)でルーティングするから「関連文脈を探す」が安い。散文だけではスキャンできない。
-2. **強制同期 > 善意。** 古い文書はモデルの限界より速くエージェントの精度を殺す。誤った文書は無い文書より悪い。pre-commit フックが「docs を合わせてください」を仕組みに変える。
-3. **エージェントが自分のミスを記録する。** エラーは隠すノイズではなく、次の作業のための最も価値ある構造化パターン。`error-check` が作業前に読み、`error-log` がミス後に書く。
-4. **検証済みの事実のみ。** 文書はコードで確認したものだけを記し、import 一行から推論したものは書かない。(この規則は、このシステムの最初のビルドがクラスの場所を推測で書いて自己矛盾したために存在する — まさにその失敗を防ぐ規則。)
-5. **スキルを含めすべて保守対象。** スキルは固定ではない。パス/スキーマがずれたら、それを参照するスキルを同じ変更で直す。だからスキルには自己点検ノートがある。
+1. **Code is ground truth; docs are source of truth.** コードと文書が違えば文書を直す。
+2. **Frontmatter でメモリを scan 可能にする。** 全文より構造化フィールドの方が安い。
+3. **まず rank し、少数だけ開く。** recall が多いことと retrieval が良いことは同じではない。
+4. **エージェントが自分のミスを記録する。** 同じ root cause の recurrence を可視化する。
+5. **継続する教訓は昇格する。** incident は known risk や gate になるべき。
+6. **Product-name-first ではなく capability-first.** 実際に read/write/execute できる範囲で行動する。
+7. **One core, thin adapters.** Claude/OpenAI 用に同じメモリを fork しない。
+8. **Gate は実行された証拠を持つ。** positive-only 検証では不十分。
+9. **Memory は bounded。** cold material は archive しても復元可能性を残す。
+10. **プロトコルと Skill も保守対象。** ルールを足し続けず、古いルールを置換・削除する。
 
-## 作業プロトコル (日々どう変わるか)
+## なぜ一般化できるのか
 
-些細でないすべてのリクエストでエージェントは: **task-scan -> docs 読み -> error-check -> 実行 -> error-log -> .agent-os/docs/スキル同期 -> タスク終了**。コストは小さく(frontmatter を数回スキャン)、*ループを実際に踏んだとき*の報酬は、意図がぶれず、システムが時間とともに陳腐化ではなく*より正確*になり得ること。agent-os は強制パイプラインではなく規律のスキャフォルドだ: 正しい習慣を安く可視にするだけで、特定のターンでループを強制はしない — それは human-in-the-loop の役割だ([運用ガイド](GUIDE.ja.md))。
+このメモリモデルは特定の言語やフレームワークに依存しません。文脈を失うほど大きい、罠が蓄積するほど古い、または同じ失敗のコストが高いリポジトリなら、verified source of truth、structured task/error memory、bounded retrieval、mechanical sync の恩恵を受けられます。
 
-## スケーリング: メモリを安く保つ
+agent-os は別のモデル専用 memory service ではありません。**異なる agent が同じ検証済みプロジェクトメモリを共有するための repository-local operating discipline** です。
 
-タスク・エラー文書は無限に溜まるため、素朴なスキャンはトークン O(N) になり1サイクルを丸ごと消費しうる。agent-os は5手でこれを抑える:
+## Credit
 
-1. **グロブではなくインデックス。** `.agent-os/prompts/index.jsonl` = 生成カタログ — タスク/エラー/意思決定ごとに1行(id, status, area, tags, summary, path + 退避シグナル `refs`・`pin` + 重みシグナル `sev`・`rec`・`files`・`kw`・`rc`)。スキャンコスト O(Nファイル) -> O(1ファイル)。
-
-1b. **インデックスは読むのではなくランク付けする。** そのファイルが136KBになれば O(1ファイル) も誤った単位だ — スキルに「エラー行を grep しろ」と言えば**エラー全件**がコンテキストに入る。`rank.sh` が各行を採点して上位数件だけを返し、スキルは3件を開く。**読むのはシェルプロセスなので、ファイルサイズがトークンコストでなくなる** — だから summary を**切り詰めない**。計測では summary はインデックスの39%に過ぎず、切れば文書の半数を損ないながら節約は5分の1、しかも追加する信号フィールドがその節約を上回る。最強の信号はキーワードではなく `-f` だ — 今から触るファイルを挙げた文書は、キーワード0ヒットでも浮上する。
-
-1c. **拡張されるのはクエリであって文書ではない。** チームは1言語では書かず、同じ概念が言語ごとに散る。`vocab.txt` が概念の表記を結び、**クエリ**を拡張する。文書は1件も再タグ付けしないので、1行足すコストはゼロだ。計測: 日本語の質問で韓国語のエラーを探す場合、**検出0件**(日本語には空白が無く、空白分割はトークン1個を作り何にも当たらない)から **5/5** へ。
-
-2. **古さではなくコールド度で圧縮。** 微妙な点。古い ≠ コールド。完了した文書でも **無参照(`refs == 0`、誰もリンクしない) AND 未ピン AND 最近更新なし** の時だけアーカイブ。よく参照される・頻繁に編集される文書はどれだけ古くてもホット; open エラーや活性タスクは候補にすらならない。古さは最後のゲートであり唯一の基準ではない。キャッシュ退避(LRU/LFU + 参照グラフ)に倣ったもので TTL ではない。
-
-3. **意味的に圧縮し、安く保存。** コールド文書は要約1行を `.agent-os/prompts/archive/*.jsonl` に残し `.md` を削除; 全文は git 履歴(`git show`)に残るので git が無料のコールドストア。最も価値ある圧縮は*ロールアップ*: 類似エラーログ N件を `.agent-os/docs/`(known-risks)の規則1つに畳む — 保存は減り SoT は同時に強くなる。
-
-**いつ compaction が発動するか?** 機械的・観測可能に: `agent-os-health.sh` と SessionStart ナッジが、活性インデックスサイズとコールド候補数を報告し、閾値を超えると警告する。自動削除はない — `/agent-os:archive` を使うよう促すだけで、適用前にプレビューする。
-
-health はさらに、**静かに失敗するもの**を見る: 文書より古いインデックス(すべてのスキャンが古いカタログを読むのに誰も教えてくれない)、1か月放置された未完タスク、ピンの濫用(`pin` は「重要」ではなく「恒久的に load-bearing」の意 — リポジトリの大半をピンすればコールド判定自体が成立しない)、規則にならなかった再発、空の評価セット、予算を超えたプロトコル。**設計上、読み取り専用である** — ファイルを書き換える SessionStart フックはセッション開始を予測不能にする。
-
-**ここでは速度が正しさの問題だ。** これらのスクリプトはすべてシェルループではなく **awk 単一パス**であり、趣味ではない。ループ版はフィールドごとにサブプロセスを起動し、プロセス生成が数十msの Windows では260文書のインデックス作成に**43分**、compaction のプレビューに**6分**かかった。誰も回さないのでインデックスは古び、compaction は永遠に起きない — しかも「compaction が死んだ」と教えるはずの道具が、その6分のものを呼んでいた。**回すには遅すぎる検査は、存在しない検査だ。**
-
-閾値はマジックナンバーではなく導出値だ:
-
-- 真のコストはルーティングスキルがインデックスをスキャンする際のトークン。インデックス1行 ≈ 335バイト ≈ **~100トークン**(CJK summary 込みの実測; ASCII ならより小さい)。よって最悪(インデックス全読み) = `エントリ数 x ~100` トークン。
-- その最悪読みを**コンテキストウィンドウの ~10%**で予算化する。すると:
-
-  ```
-  MAX_ACTIVE (既定) = CONTEXT_TOKENS / 1000        # = CONTEXT * 0.10 / 1行100トークン
-  COMPACT_NUDGE (既定) = MAX_ACTIVE / 4            # 一度の compaction に値するバッチ
-  ARCHIVE_AGE_DAYS (既定) = 90                     # 慣例(~1四半期 "stale"); 最も弱いシグナル
-  ```
-
-  | コンテキスト | 10% 予算 | 既定 MAX_ACTIVE | 既定 NUDGE |
-  |---|---|---|---|
-  | 200k | ~20k tok | 200 | 50 |
-  | 1M | ~100k tok | 1000 | 250 |
-
-- トークン根拠があるのは `MAX_ACTIVE` のみ(トークン予算 ÷ 行コスト); `NUDGE`・`AGE_DAYS` は慣例。すべて env で上書き可能: `AGENT_OS_CONTEXT_TOKENS`, `AGENT_OS_MAX_ACTIVE`, `AGENT_OS_COMPACT_NUDGE`, `AGENT_OS_ARCHIVE_AGE_DAYS`。`AGENT_OS_CONTEXT_TOKENS` をモデルのウィンドウに合わせれば残りが連動してスケールする。
-
-## なぜ一般化するか
-
-言語・フレームワークに縛られるものはない。文脈を失うほど大きい、または罠が溜まるほど古いプロジェクトなら、唯一の真実 + スキャン可能なタスク/エラーメモリ + 強制同期メカニズムの恩恵を受ける。`/agent-os:init` が構造を敷き、プロジェクト固有の真実はあなたが埋める。
-
-## クレジット
-
-4層フレーミングと「生の履歴より構造化された手続き知識」の洞察は、Anthropic のデータ分析AIスキル構築の記事に由来する。agent-os はそのアイデアをコード作業向けに軽量に翻案したものだ。
+raw history より structured procedural knowledge が重要だという考え方は、Anthropic の reusable agent Skills に関する文章から一部着想を得ています。agent-os はその考え方を repository 作業へ適用しつつ、memory と operating protocol は特定 host に依存しないよう設計しています。
