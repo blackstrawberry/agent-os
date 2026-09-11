@@ -30,9 +30,9 @@ agent-os の目的はすべての作業を重くすることではない。**作
 ```mermaid
 flowchart TD
     A[ユーザー依頼] --> B{作業規模を判定}
-    B -->|Trivial| T[そのまま回答/修正]
-    B -->|Local| E[関連する過去 Error を確認]
-    B -->|Broad| K[Known Risks + Task/ADR + Error を取得]
+    B -->|軽微な作業<br/>Trivial| T[そのまま回答/修正]
+    B -->|局所的な修正<br/>Local| E[関連する過去 Error を確認]
+    B -->|広範囲な変更<br/>Broad| K[Known Risks + Task/ADR + Error を取得]
 
     K --> P[Task Scope / Plan を整理]
     P --> G1{{Human Gate 1<br/>範囲と計画を承認}}
@@ -52,6 +52,27 @@ flowchart TD
 
     C --> F[status: completed<br/>completed/ へ移動 + index/lint]
 ```
+
+### 作業規模の3分類
+
+英語名は内部ラベルとして残しているが、意味は次のように考えればよい。
+
+| 分類 | 日本語での意味 | 目安 | agent-os の動き |
+|---|---|---|---|
+| **軽微な作業（Trivial）** | 過去の設計や失敗を知らなくても安全に処理できる小さな作業 | 誤字修正、1行の回答、単純なコマンド、明白な小変更 | 過去記録を探さず、そのまま処理 |
+| **局所的な修正（Local）** | 変更箇所と原因がおおむね明確で、影響範囲が狭い修正 | 1ファイル前後の明確な不具合、特定 API の validation 修正、1コンポーネント内の変更 | 主に過去の `error` だけ確認。Task 作成は任意 |
+| **広範囲な変更（Broad）** | 実装前に既存設計・過去の判断・既知の罠を知る必要がある変更 | 新機能、複数モジュール変更、設計変更、DB migration、認証、release、戻しにくい変更 | known risks、関連 Task/ADR、過去 Error、Source of Truth を確認して Scope/Plan を作る |
+
+ファイル数だけでは決めない。たとえば変更が1行でも、DB migration・データ削除・認証・外部公開のように**失敗したときの影響が大きい作業は「広範囲な変更」として扱う**方が安全である。
+
+判断の軸はおおむね次の4つ。
+
+- **影響範囲**: 他の画面・API・データ・利用者まで影響するか
+- **不確実性**: 原因や正しい設計がまだ明確でないか
+- **過去の判断との関係**: ADR や以前の Task を知らないと同じ議論を繰り返しそうか
+- **失敗コスト**: rollback が難しい、外部公開される、データを壊す可能性があるか
+
+迷う場合は基本的に小さい分類から始める。ただし、失敗コストが高い作業は無理に小さく扱わず Broad 側に寄せる。
 
 ### Human Gate ではこう伝える
 
@@ -79,7 +100,7 @@ OK。この計画どおり進めて。
 問題ない。必要な docs/error/ADR を同期してタスクを終了処理して。
 ```
 
-小さな変更で毎回この gate を強制する必要はない。Broad 作業、release、削除、migration、戻しにくい変更で特に価値が高い。
+小さな変更で毎回この gate を強制する必要はない。広範囲な変更（Broad）、release、削除、migration、戻しにくい変更で特に価値が高い。
 
 ---
 
@@ -96,6 +117,8 @@ OK。この計画どおり進めて。
 /plugin install agent-os@agent-os
 /agent-os:init
 ```
+
+`blackstrawberry/agent-os` は GitHub 用の公式な `owner/repo` 省略記法であり、`https://github.com/...git` の完全 URL は必須ではない。GitHub 以外の Git サーバーでは完全な Git URL を指定できる。
 
 ### Codex
 
@@ -155,7 +178,7 @@ installer は `.agent-os/` と root `CLAUDE.md`/`AGENTS.md` を作る。両フ�
 
 ---
 
-## 4. Broad タスクを実際に運用する流れ
+## 4. 広範囲な変更（Broad）を実際に運用する流れ
 
 **ユーザー:** 「詳細ページの売買状態が一覧と違う。合わせて。」
 
@@ -201,8 +224,7 @@ read-only mode は同じ closeout checklist を提示するだけで、適用し
 | 「agent-os を初期化/更新」 | `agent-os-init` (Claude: `/agent-os:init`) |
 | 「cold memory を整理」 | `agent-os-archive` (Claude: `/agent-os:archive`) |
 
-作業は手順ではなく規模で分ける。trivial は即処理、local は通常 error-check のみ、broad のみ
-known-risks + prior task/ADR + error history を先に読む。
+作業は手順ではなく規模で分ける。**軽微な作業（Trivial）はそのまま処理、局所的な修正（Local）は主に過去 Error を確認、広範囲な変更（Broad）は known risks + 関連 Task/ADR + Error history を先に確認する。**
 
 ---
 
