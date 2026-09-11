@@ -61,6 +61,43 @@ else
   ok "OpenAI manifest leaves convention hook implicit"
 fi
 
+# A SessionStart hook's stdout is parsed as JSON by the host whenever it looks like JSON.
+# Printing the "[agent-os] ..." verdict raw reads as a JSON array, so the host rejects the
+# hook and drops the nudge -- silently on one host, as a visible failure on the other.
+# The contract is therefore: print nothing, or print one valid SessionStart object. E0012.
+notify=scripts/agent-os-notify.sh
+if [ ! -f "$notify" ]; then
+  bad "missing $notify"
+elif command -v python3 >/dev/null 2>&1; then
+  nt=$(mktemp -d 2>/dev/null || mktemp -d -t aos-notify-test) || exit 2
+  # 1. A project that does not use agent-os must produce no output at all.
+  quiet=$( (cd "$nt" && sh "$root/$notify") 2>/dev/null )
+  [ -z "$quiet" ] && ok "notify hook stays silent outside agent-os projects" \
+                  || bad "notify hook spoke in a non-agent-os project"
+  # 2. Inside a real scaffold with something pending, the output must parse as the
+  #    documented SessionStart object -- never as a bare line and never as an array.
+  mkdir -p "$nt/p"
+  if sh scripts/init.sh --no-eval "$nt/p" >"$nt/init.out" 2>&1; then
+    spoken=$( (cd "$nt/p" && sh "$root/$notify") 2>/dev/null )
+    if [ -z "$spoken" ]; then
+      bad "notify hook said nothing in a scaffold with pending work"
+    elif printf '%s' "$spoken" | python3 -c '
+import json,sys
+d = json.load(sys.stdin)
+h = d["hookSpecificOutput"]
+assert h["hookEventName"] == "SessionStart", h["hookEventName"]
+assert h["additionalContext"].strip(), "empty additionalContext"
+' >/dev/null 2>&1; then
+      ok "notify hook emits a valid SessionStart object"
+    else
+      bad "notify hook output is not a valid SessionStart object: $(printf '%s' "$spoken" | head -1)"
+    fi
+  else
+    bad "notify fixture could not scaffold: $(head -1 "$nt/init.out")"
+  fi
+  rm -rf "$nt"
+fi
+
 for s in agent-os agent-os-init agent-os-archive task-scan error-check error-log; do
   f="skills/$s/SKILL.md"
   if [ ! -f "$f" ]; then bad "missing $f"; continue; fi
