@@ -20,8 +20,8 @@ On a big or old codebase, an AI agent's intent leaks: it assumes instead of veri
 | Host | Entry point | Persistent project guidance | Repository writes |
 |---|---|---|---|
 | Claude Code | `.claude-plugin/`, `/agent-os:init`, `/agent-os:archive` | `CLAUDE.md` | full local mode |
-| Codex | `.codex-plugin/`, `$agent-os-init`, `$agent-os` | `AGENTS.md` | full local/Codex mode |
-| ChatGPT | installed plugin Skills such as `@agent-os` | Skills are the primary entry point; do **not** assume repository `AGENTS.md` is auto-loaded | capability-dependent; the ordinary GitHub app is read-only |
+| Codex | installed Skill/plugin, `$agent-os` | `AGENTS.md` | full local/Codex mode |
+| ChatGPT | installed Skill such as `agent-os` | Skills are the primary entry point; do **not** assume repository `AGENTS.md` is auto-loaded | capability-dependent; the ordinary GitHub app is read-only |
 
 Skills select behavior by **capability**, not by product name. With shell + writable files they run full mode. With repository write actions but no shell they reproduce the same lifecycle using repository tools. With read-only repository access they research prior work/risks and prepare exact task/error updates without claiming those updates were written.
 
@@ -37,43 +37,81 @@ Skills select behavior by **capability**, not by product name. With shell + writ
 
 ## Install
 
-### Claude Code
+Public repository: **https://github.com/blackstrawberry/agent-os**
+
+### Claude Code — plugin install
+
+Paste these directly into Claude Code:
 
 ```text
-/plugin marketplace add <owner>/<repo>
+/plugin marketplace add blackstrawberry/agent-os
 /plugin install agent-os@agent-os
 /agent-os:init
 ```
 
 Development checkout:
 
-```text
-claude --plugin-dir /absolute/path/to/agent-os
+```sh
+git clone https://github.com/blackstrawberry/agent-os.git
+claude --plugin-dir "$(pwd)/agent-os"
 ```
 
-### Codex / ChatGPT
+### Codex — GitHub Skill install
 
-The repository ships a native OpenAI plugin manifest at `.codex-plugin/plugin.json` and a marketplace descriptor at `.agents/plugins/marketplace.json`. Add/import the repository as a plugin marketplace in a supported ChatGPT/Codex plugin surface, install **agent-os**, then use:
+Codex's built-in `$skill-installer` can install a Skill directly from a GitHub directory. For the minimal agent-os entry point, paste this into Codex:
 
 ```text
-Codex:   $agent-os-init
-ChatGPT: @agent-os-init
+$skill-installer install https://github.com/blackstrawberry/agent-os/tree/main/skills/agent-os
 ```
 
-After installation, normal requests can route to the shared skills implicitly. Codex also reads root `AGENTS.md` before work. ChatGPT should enter through the installed Skills; a plain GitHub connection is not treated as writable project state.
+Restart Codex after installation. Then open an initialized project and either say your request normally or invoke the Skill explicitly:
+
+```text
+$agent-os inspect the related task, ADR, known risks and past errors before changing this repo
+```
+
+For a **new project**, the Skill alone is not the project scaffold. Clone the public repository once and run the installer:
+
+```sh
+git clone https://github.com/blackstrawberry/agent-os.git ~/.local/share/agent-os
+bash ~/.local/share/agent-os/scripts/init.sh /absolute/path/to/your/project
+```
+
+For an existing agent-os project:
+
+```sh
+git -C ~/.local/share/agent-os pull --ff-only
+bash ~/.local/share/agent-os/scripts/init.sh --update /absolute/path/to/your/project
+```
+
+That creates/updates `.agent-os/`, root `CLAUDE.md`, and root `AGENTS.md`. Codex automatically uses the project's `AGENTS.md`; the installed `agent-os` Skill supplies the reusable routing/workflow entry point.
+
+If **agent-os** is available in your Codex Plugins directory or through a workspace-imported marketplace, you can install the plugin there instead; the Skill-only GitHub route above is the portable public-repo path.
+
+### ChatGPT — Skill install
+
+If your ChatGPT Skills surface supports uploads, download the repository and upload the **`skills/agent-os/` folder** as one Skill:
+
+- Repository: https://github.com/blackstrawberry/agent-os
+- ZIP: https://github.com/blackstrawberry/agent-os/archive/refs/heads/main.zip
+- Skill folder: `skills/agent-os/`
+
+For workspace-managed plugin distribution, an eligible admin can import the GitHub marketplace from `https://github.com/blackstrawberry/agent-os` and keep it synchronized from GitHub. Availability depends on the workspace/product surface.
+
+After installation, a normal request may route to agent-os implicitly. ChatGPT should enter through the installed Skill; a plain GitHub connection is not treated as writable project state.
 
 ## Initialize / migrate a project
 
 The bundled installer creates `.agent-os/` and adds the **same marked protocol block** to root `CLAUDE.md` and `AGENTS.md`:
 
 ```sh
-bash <plugin>/scripts/init.sh [--no-eval] /path/to/project
+bash /path/to/agent-os/scripts/init.sh [--no-eval] /path/to/project
 ```
 
 For an existing agent-os project:
 
 ```sh
-bash <plugin>/scripts/init.sh --update /path/to/project
+bash /path/to/agent-os/scripts/init.sh --update /path/to/project
 ```
 
 `--update` preserves all text outside the `<!-- agent-os:begin -->` / `<!-- agent-os:end -->` markers. A pre-0.8 Claude-only install is migrated by creating the missing `AGENTS.md`; malformed markers abort before either guidance file is partially rewritten.
@@ -95,8 +133,8 @@ There is no required daily command. Talk normally; Skills route the request.
 | "write this up as a task" / "did we do this before?" | `task-scan` |
 | "have I hit this mistake before?" | `error-check` |
 | "log that mistake" | `error-log` |
-| "initialize/update agent-os" | `agent-os-init` |
-| "clean up cold memory" | `agent-os-archive` |
+| "initialize/update agent-os" | `agent-os-init` / `/agent-os:init` in Claude |
+| "clean up cold memory" | `agent-os-archive` / `/agent-os:archive` in Claude |
 
 Work is sized, not marched through: trivial goes straight to the answer; local work needs prior-error checking; broad work reads known risks, prior tasks/ADRs and relevant error history before implementation.
 
