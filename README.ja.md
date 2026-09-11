@@ -2,102 +2,113 @@
 
 **言語:** [English](README.md) | [한국어](README.ko.md) | 日本語
 
-レガシー/曖昧なコードベースのための **エージェント運用システム** — Claude Code プラグイン。
+レガシー/曖昧なコードベース向けの **ホスト非依存エージェント運用システム**。Claude Code、Codex、ChatGPTで同じプロジェクト記憶を共有する。
 
-大規模・古い・雑然としたコードベースでは、AIエージェントの意図がぶれる: 確認せず推測し、過去のミスを繰り返し、ドキュメントを陳腐化させる。agent-os はモデルではなく **構造** を直す。プロジェクトに唯一の真実(Source of Truth)、スキャン可能なタスク/エラー記憶、自己点検スキル、強制同期フックを与え — *ループを踏んだとき*にエージェントが時間とともに **より正確** になり得るようにする。自動保証ではなく、人がループに残る規律のスキャフォルドだ。
+agent-os の本体は特定モデルではなく `.agent-os/` にある。タスク・エラー・ADR・Source of Truth・ランキング・メモリ保守の仕組みは一つだけ持ち、Claude/Codex/ChatGPT は薄いアダプタから同じ情報を読む。
 
-> **使い方:** **[運用ガイド](docs/GUIDE.ja.md)** — human-in-the-loop ループ(セットアップ -> タスク -> 確認 -> 実行 -> 自己改善 -> 繰り返し)。まずここから。
->
-> 全体の背景は **[docs/CONCEPT.ja.md](docs/CONCEPT.ja.md)**。アイデアを理解・採用するなら一読を。
+> **運用方法:** [運用ガイド](docs/GUIDE.ja.md) · 背景: [CONCEPT](docs/CONCEPT.ja.md)
 
-## コアアイデア(要約)
-agent-os が借りた発想(Anthropic の*スキル*構築の記事): 過去データを増やしても精度はほぼ上がらず、精度を押し上げるのは **構造化された手続き知識(=スキル)** だ。agent-os はこの発想を日常のコーディング作業に軽量に適用した — まだ未計測の — 4層構造である。実際の効果は Validation 層で自分で測定する。
+## コア構造
 
-- **Foundation** (`CLAUDE.md`): すべてのリクエストが従う作業プロトコル(ルーター)。
-- **Source of Truth** (`.agent-os/docs/`): 実スキャンで書いた検証済みのシステム記述。コードと異なればコードを確認のうえ docs を直す。
-- **Skills**: ルーター3種 — `task-scan`(関連する過去作業の発見)、`error-check`(ミスの再発防止)、`error-log`(エージェントが自らミスを記録)。
-- **Validation** (`.agent-os/prompts/eval/`): 正解が明確な評価セットで、変更が改善かを数値で確認 — そして**その規則がまだ価値を出しているか**も。
+- **Foundation**: canonical プロトコルは一つ。Claude Code は root `CLAUDE.md`、Codex は同じ内容の `AGENTS.md` を読む。
+- **Source of Truth**: `.agent-os/docs/`。コードが ground truth。文書と違えばコードを確認して文書を直す。
+- **共有 Skills**: `agent-os`, `agent-os-init`, `agent-os-archive`, `task-scan`, `error-check`, `error-log`。
+- **Validation**: `.agent-os/prompts/eval/` の known-answer セットで規則の有効性を測る。
 
-## 提供機能
-- **スキャンではなくランキング。** `rank.sh` がインデックス全件を採点し上位数行だけを返す。スキルは上位3件のみ開く。問題は再現率ではなく**順位**だった — 平文 grep は正解を見つけるが数十件の中に埋める。
-- **最強のシグナルは、今から触るファイル。** `-f` にパスを渡せば、キーワードが0ヒットでもそのファイルの過去エラーが浮上する。
-- **どの言語で訊いてもよい。** `.agent-os/vocab.txt` が概念の表記をつなぐ — 日本語の質問が韓国語で書かれたエラーに届く。**文書は再タグ付けしない。** 拡張されるのはクエリだけ。
-- **再発は散文ではなくカウント。** 同じ根本原因は新規文書ではなくカウンタを上げる。**3回目からは文書の修正は応答ではない** — 教訓を昇格させるか、機械的なゲートを作る。
-- **意思決定記録**(`.agent-os/docs/adr/`): **何を却下したか**と**何が変われば再検討するか**。インデックス対象なので、再提案は着手前に却下履歴に当たる。
-- **スキル**(自動ルーティング): `task-scan`, `error-check`, `error-log`
-- **コマンド**: `/agent-os:init [--no-eval]` — `.agent-os/` + ルート `CLAUDE.md` プロトコル節を生成(既存ファイルは上書きしない)。`--update` は既存 `CLAUDE.md` のプロトコル区間のみ更新
-- **強制同期**(opt-in): `pre-commit` フックが**そのコミットが触れる文書だけ**を厳格に検査する(enum 値・日付形式・プレースホルダの残存)。既存プロジェクトが自らの過去で止まらない
-- **メモリの上限管理**: 生成インデックス + `/agent-os:archive` — **コールドな文書のみ**アーカイブ(完了・無参照・未ピン・古い; 単なる古さではない)。全文は git に保存。**教訓を known-risks に先に昇格**させることがアーカイブを安全にする
-- **静かな失敗の検知**: 文書より古いインデックス、30日放置された未完タスク、ピンの濫用、規則にならなかった再発、空の評価セット、予算超過のプロトコル。**読み取り専用** — 知らせるだけで直さない
+## ホスト対応
+
+| ホスト | エントリ | 継続ガイダンス | 書き込み |
+|---|---|---|---|
+| Claude Code | `.claude-plugin/`, `/agent-os:init` | `CLAUDE.md` | local full mode |
+| Codex | `.codex-plugin/`, `$agent-os-init`, `$agent-os` | `AGENTS.md` | Codex/local full mode |
+| ChatGPT | インストール済み Skill (`@agent-os` 等) | Skill が基本入口。repo の `AGENTS.md` 自動読込を前提にしない | 接続ツール次第。通常の GitHub app は read-only |
+
+Skills は製品名ではなく **実際の capability** でモードを選ぶ。shell+write があれば full mode、repository write のみなら repository mode、read-only なら prior task/error/known-risk の調査と具体的な変更案まで行い、実際に書いたとは主張しない。
 
 ## インストール
-```
-/plugin marketplace add /absolute/path/to/agent-os-plugin
+
+### Claude Code
+
+```text
+/plugin marketplace add <owner>/<repo>
 /plugin install agent-os@agent-os
-```
-開発用に直接ロード(セッション限定): `claude --plugin-dir /absolute/path/to/agent-os-plugin`
-GitHub プッシュ後: `/plugin marketplace add <owner>/<repo>`
-
-## 使い方
-```
-/agent-os:init             # 構造をスキャフォルド (評価セット Validation を含む)
-/agent-os:init --no-eval   # 評価セット(Validation)を除外
-```
-スキャフォルド後:
-1. `git config core.hooksPath .agent-os/scripts/hooks` — 強制同期フックを有効化
-2. 初回の全体スキャンで `.agent-os/docs/` をプロジェクトの Source of Truth として埋める(スキャフォルドは索引の骨組みのみ生成)
-3. `.agent-os/prompts/eval/eval-set.md` を5行埋める — **このプロジェクトが実際に踏んだ罠**から。後で「この規則はまだ価値があるか」を問える唯一の計測器であり、これが無ければ規則を**足すのも外すのも**当てずっぽうになる
-4. 作業は手順を行進するのではなく**規模を判定**する: **trivial** は即答、**局所**は `error-check` のみ、**広域**だけがフルループ
-
-## 日々の運用
-
-**日常のループにコマンドは無い — ただ話しかければいい。** スラッシュコマンドは `init` と
-`archive` の二つだけで、残りはスキル3種が受け持つ。スキルの description がそのまま**発動
-条件**なので、普通の一文からエージェントが自分で呼び出す。
-
-| こう言えば | 動くもの | なぜ引っかかるか |
-|---|---|---|
-| 「これをタスクにまとめて」 | `task-scan` | 探すだけでなくタスク文書の**作成**もこのスキルの担当 |
-| 「これ前にやった?」 | `task-scan` | 関連する先行作業を先に当て、やり直しを防ぐ |
-| 「今のミスを記録して」 | `error-log` | 言われなくても、エージェントが自ら失敗を認めた時にも発動 |
-| 「この失敗は前にもあった?」 | `error-check` | コード編集・デバッグの直前にも自動で |
-
-**frontmatter を手で書くことは無い。** 採番、`_TEMPLATE.md` のコピー、`status`・日付の記入まで
-スキルがやる。新しいタスクは `.agent-os/prompts/tasks/NN_slug.md`、`status: planned` で生まれる。
-
-広域作業の一場面:
-
-```
-「ログインに SSO を足して」
-   -> task-scan が過去の認証まわりの作業とそれを所有する文書を見つけ、
-      error-check がこれから触るファイルに紐づく罠を上げる
-「まずタスクを作って」            -> NN_sso_login.md, status: planned
-        ... 作業中に踏んだものはその都度記録される ...
-「これをクローズして」            -> status: completed, completed/ へ移動、
-                                   docs は同じ変更の中で更新
+/agent-os:init
 ```
 
-機械的な部分は pre-commit フックが見る。静かになったものは `agent-os-health.sh` が教える。
-**どちらも代わりに判断はしない。**
+開発 checkout を直接ロード:
 
-**人が引き続き担うこと。** スキルはルーティングと書式を引き受けるが、判断は代行しない。実際の
-スキャンで `.agent-os/docs/` を埋めること、どの教訓を `07_known-risks.md` の規則にするか決める
-こと、この変更が広域かを判定すること、終わったと承認すること — すべて人の仕事だ。自動操縦では
-なく、**人をループの中に留めておくための骨組み**である。
+```text
+claude --plugin-dir /absolute/path/to/agent-os
+```
 
-## チューニング
-閾値はハードコードではなく**コンテキストウィンドウから導出**。`AGENT_OS_CONTEXT_TOKENS` をモデルのウィンドウに設定すれば、`AGENT_OS_MAX_ACTIVE`(既定 `CONTEXT_TOKENS/1000`)・`AGENT_OS_COMPACT_NUDGE`(既定 `MAX/4`)が連動してスケールする。根拠は [docs/CONCEPT.ja.md](docs/CONCEPT.ja.md) を参照。
+### Codex / ChatGPT
 
-セッションごとに注入されるテキストにも上限がある — プロトコル節 3,000字、スキル本文 各2,000字。
-超過時の規則は**追記ではなく置換**。根拠は毎セッション読まれるプロンプトではなく `.agent-os/docs/` に置く。
+OpenAI native manifest は `.codex-plugin/plugin.json`、marketplace descriptor は `.agents/plugins/marketplace.json`。対応する ChatGPT/Codex Plugin 画面で repository/marketplace を追加して **agent-os** をインストールし、次を使う:
 
-## 性能
-すべてのスクリプトがシェルループではなく **awk 単一パス**である。趣味の問題ではない — Windows はプロセス生成が高価で、
-ループ版は260文書のインデックス作成に**43分**、compaction のプレビューに**6分**かかった。
-そこまで遅い道具は誰も回さず、**回されない検査は存在しない検査**だ。
+```text
+Codex:   $agent-os-init
+ChatGPT: @agent-os-init
+```
 
-## 言語ポリシー
-スキル・コマンド・テンプレート・スクリプトは **英語のみ**(プロンプト/運用用)。README のみ翻訳する。ドキュメントは **検証済みの事実のみ** を記し、秘密値を docs/prompts にコピーしない。
+Codex は作業前に root `AGENTS.md` を読む。ChatGPT はインストール済み Skills が主入口で、GitHub 接続だけの通常チャットを writable な project state とみなさない。
+
+## プロジェクト初期化 / 移行
+
+```sh
+bash <plugin>/scripts/init.sh [--no-eval] /path/to/project
+bash <plugin>/scripts/init.sh --update /path/to/project
+```
+
+installer は `.agent-os/` を作り、**同じ protocol block** を root `CLAUDE.md` と `AGENTS.md` に入れる。`--update` は marker 外のユーザーテキストを保持する。旧 Claude-only install では欠けた `AGENTS.md` を追加する。marker が壊れていれば片方だけ更新された状態を残さず中断する。
+
+初期化後:
+
+1. `git config core.hooksPath .agent-os/scripts/hooks`
+2. 実際の repo scan から `.agent-os/docs/` を作る
+3. 実際に起きた失敗から eval set を作る
+4. project 用語を `.agent-os/vocab.txt` に追加する
+
+## 日常運用
+
+| こう言えば | 動くもの |
+|---|---|
+| 「この repo で agent-os を使って」 | `agent-os` |
+| 「タスク化 / 前にやった?」 | `task-scan` |
+| 「このミス前にもあった?」 | `error-check` |
+| 「今のミスを記録」 | `error-log` |
+| 「agent-os を初期化/更新」 | `agent-os-init` |
+| 「cold memory を整理」 | `agent-os-archive` |
+
+作業は規模で分ける。trivial は即処理、local は過去エラー確認、broad のみ known-risks + prior task/ADR + error history を先に読む。
+
+## 構造
+
+```text
+agent-os/
+├── .agents/plugins/marketplace.json
+├── .claude-plugin/
+├── .codex-plugin/plugin.json
+├── skills/{agent-os,agent-os-init,agent-os-archive,task-scan,error-check,error-log}/
+├── commands/                  # Claude compatibility adapter
+├── hooks/hooks.json
+├── scripts/
+├── templates/
+│   ├── AGENT_PROTOCOL.section.md
+│   ├── CLAUDE.section.md
+│   └── AGENTS.section.md
+└── docs/
+```
+
+lab repository の root `CLAUDE.md`/`AGENTS.md` は dogfooding 用 PRIVATE 状態。公開 `agent-os` には template/adapter だけを出す。
+
+## 検証
+
+```sh
+sh scripts/host-adapter-test.sh
+```
+
+protocol drift、Claude/OpenAI manifest の name/version drift、Skill metadata、fresh init、Claude-only migration、marker 外テキスト保持、malformed marker の fail-closed を検査する。OS/awk/locale 差は既存 `portability-test.sh` が担当。
 
 ## ライセンス
-MIT — [LICENSE](LICENSE)。
+
+MIT — [LICENSE](LICENSE)

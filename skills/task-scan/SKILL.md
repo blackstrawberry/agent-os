@@ -1,6 +1,6 @@
 ---
 name: task-scan
-description: On a new request, scan .agent-os/prompts/tasks (and completed) frontmatter to find related prior tasks and route to the relevant source-of-truth docs. Use at the start of any task, when asked "did we do this before?", or when creating/archiving task docs.
+description: On a new broad request, find related agent-os tasks and decisions before code changes. Use when asked whether work was done before, when creating/closing task docs, or for multi-file/design work. Works with shell ranking when available and repository search in read-only ChatGPT-style hosts.
 ---
 
 # task-scan
@@ -10,33 +10,33 @@ Connect a request to existing context BEFORE touching code.
 </Purpose>
 
 <Use_When>
-Broad work (many files, design change, new feature); creating a task doc or changing its
-status; "did we do this before?".
-Not for trivial or local work — a one-file bug fix needs `error-check`, not this.
+Broad work; creating/closing task docs; "did we do this before?". Not for trivial work. A
+one-file bug normally needs `error-check` only.
 </Use_When>
 
 <Steps>
-1. Rank, do not scan:
+1. Retrieve, do not dump the corpus.
+   **Shell available:**
    ```sh
-   sh .agent-os/scripts/rank.sh -q "<words from the request>" -f "<paths you will touch>" -n 8
+   sh .agent-os/scripts/rank.sh -q "<request words>" -f "<paths>" -n 8
    ```
-   `SCORE<TAB><index line>`, best first. **Open the top 3 at most.**
-   - Score 10+ = a **file hit**: a path you will touch is in that doc's `files`. Read it even
-     with no keyword match. Pass real paths to `-f`; that is what beats grep.
-   - No `rank.sh` or non-zero exit: grep the index. No index: `reindex.sh`.
+   **No shell:** search `.agent-os/prompts/tasks/`, `tasks/completed/` and
+   `.agent-os/docs/adr/` by request words, tags, summary and paths. Prefer a file-path hit.
+   Open the top 3 at most.
 
-2. A decision record (`"k":"adr"`) in the results: **read it before proposing anything.**
-   Check its *Revisit when* — condition met, say so and proceed; not met, it stands.
+2. A decision record hit must be read before proposing the rejected option again. Check
+   *Revisit when*: unmet means the decision still stands.
 
-3. Read `.agent-os/docs/` — `07_known-risks.md` first. Follow a match's `related_docs` /
-   `related_errors`. Old topic: also `prompts/archive/*.jsonl`.
+3. Read `.agent-os/docs/07_known-risks.md` and follow relevant `related_docs` /
+   `related_errors`. For old topics include `prompts/archive/*.jsonl` if accessible.
 
-4. New task -> `prompts/tasks/NN_slug.md` from `_TEMPLATE.md`. Real dates, `status: planned`.
-   **`tags` is not optional** — 3-8 words *you would search for months from now*, not words
-   already in the title. Include one canonical term from `.agent-os/vocab.txt` when one fits.
+4. New writable task -> `prompts/tasks/NN_slug.md` from `_TEMPLATE.md`, real dates,
+   `status: planned`, 3-8 useful `tags`, and relevant `files`.
+   In a read-only host, return the proposed path/frontmatter and say it was not written.
 
-5. Done -> `status: completed`, update `updated`, move to `tasks/completed/`, fill
-   `related_docs` / `related_errors`.
+5. Done in a writable host -> `status: completed`, update `updated`, move to
+   `tasks/completed/`, and fill related docs/errors. Read-only hosts report those closeout
+   changes instead of claiming them.
 </Steps>
 
 <Output>
@@ -44,5 +44,5 @@ Not for trivial or local work — a one-file bug fix needs `error-check`, not th
 </Output>
 
 <Self_Maintenance>
-Sync paths and field names with `.agent-os/prompts/` and the templates. Budget 2000 chars.
+Sync paths/fields with `.agent-os/prompts/` and its templates. Keep retrieval bounded.
 </Self_Maintenance>

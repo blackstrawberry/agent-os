@@ -1,11 +1,12 @@
 #!/bin/sh
-# agent-os scaffolder. Installs the operating-system structure into a project under .agent-os/
-# (so the project root stays clean). Never overwrites existing files.
-# Usage: bash init.sh [--no-eval] [target_dir]   (the Validation eval set scaffolds by default)
+# agent-os scaffolder. Installs the host-independent memory structure under .agent-os/
+# and thin host guidance at the repository root (CLAUDE.md + AGENTS.md).
+# Never overwrites project-owned memory.
+# Usage: bash init.sh [--update] [--no-eval] [target_dir]
 set -e
 
 AOS=".agent-os"
-WANT_EVAL=1   # Validation eval set scaffolds by default; pass --no-eval to skip
+WANT_EVAL=1
 UPDATE=0
 TARGET=""
 while [ $# -gt 0 ]; do
@@ -20,29 +21,15 @@ done
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PLUGIN_DIR=$(dirname "$SCRIPT_DIR")
 TPL="$PLUGIN_DIR/templates"
-# An install that cannot say what it has cannot be told it is behind. Cheap version:
-# the source checkout's short commit, falling back to a date when git is unavailable.
+PROTO="$TPL/AGENT_PROTOCOL.section.md"
+[ -f "$PROTO" ] || PROTO="$TPL/CLAUDE.section.md"
 AOS_VERSION=$( (cd "$PLUGIN_DIR" && git rev-parse --short HEAD) 2>/dev/null || date +%Y-%m-%d )
 [ -d "$TPL" ] || { echo "templates not found: $TPL"; exit 2; }
+[ -f "$PROTO" ] || { echo "protocol template not found: $PROTO"; exit 2; }
 
 TARGET="${TARGET:-$(pwd)}"
 cd "$TARGET"
 
-# --update refreshes the parts agent-os owns and REPORTS the parts the project owns.
-# Before this existed the only upgrade path was copying files by hand into every
-# install; that was done five times in one day across twelve repositories, and each
-# sweep is a chance to miss one. copy() deliberately skips anything that exists, which
-# is right for scaffolding and useless for upgrading, so --update needs its own rules:
-#
-#   ours     scripts/, hooks/pre-commit, the CLAUDE.md block   -> overwrite
-#   theirs   templates, vocab.txt, docs/, prompts/             -> never overwrite
-#
-# Templates are the awkward middle. Every install customises them -- measured, all ten
-# differed from the shipped copy -- so replacing the file destroys their work. But the
-# indexer reads specific keys, and a template that never asks for a key means that key
-# is empty everywhere: `keywords` and `root_cause` were dead in ten of ten repositories
-# for exactly that reason. So keys get INSERTED when missing and nothing is ever
-# removed or rewritten.
 update_scripts() {
   for f in check-prompts.sh reindex.sh rank.sh tags-gap.sh bare-test.md \
            agent-os-compact.sh agent-os-health.sh portability-test.sh; do
@@ -64,9 +51,6 @@ update_scripts() {
     fi
   fi
   chmod +x "$AOS"/scripts/*.sh "$AOS"/scripts/hooks/pre-commit 2>/dev/null || true
-  # git stores the mode separately from the filesystem, and Windows ignores the
-  # filesystem one entirely, so a hook can be executable here and 100644 for everyone
-  # who clones it. That is how a commit gate ran on nobody's machine but ours.
   if [ -d .git ] || git rev-parse --git-dir >/dev/null 2>&1; then
     if [ "$(git ls-files -s "$AOS/scripts/hooks/pre-commit" 2>/dev/null | awk '{print $1}')" = "100644" ]; then
       git update-index --chmod=+x "$AOS/scripts/hooks/pre-commit" 2>/dev/null \
@@ -75,8 +59,7 @@ update_scripts() {
   fi
 }
 
-# One line per key. Insert before summary:, which every template has.
-insert_keys() {  # $1 = template path, $2... = "key:default  # comment"
+insert_keys() {
   t="$1"; shift
   [ -f "$t" ] || { echo "SKIP   $t (absent)"; return 0; }
   grep -q '^summary:' "$t" || { echo "SKIP   $t (no summary: anchor)"; return 0; }
@@ -108,84 +91,111 @@ report_theirs() {
   for f in vocab.txt docs/07_known-risks.md; do
     [ -f "$AOS/$f" ] || echo "MISSING $AOS/$f (this project owns it -- agent-os will not write it)"
   done
-  # In the source checkout the two ARE the same file by definition, and a note that can
-  # never be acted on is how people learn to skim past this output.
-  if [ "$(pwd -P)" != "$(cd "$PLUGIN_DIR" && pwd -P)" ]      && [ -f "$AOS/vocab.txt" ] && [ -f "$TPL/vocab.txt" ] && cmp -s "$AOS/vocab.txt" "$TPL/vocab.txt"; then
+  if [ "$(pwd -P)" != "$(cd "$PLUGIN_DIR" && pwd -P)" ] \
+     && [ -f "$AOS/vocab.txt" ] && [ -f "$TPL/vocab.txt" ] && cmp -s "$AOS/vocab.txt" "$TPL/vocab.txt"; then
     echo "NOTE   $AOS/vocab.txt is still the shipped file -- seed it with this project's own"
-    echo "       terms. Measured: an unseeded alias map costs about 17 points of top-3, and"
-    echo "       the failures arrive as ZERO results, which reads as 'no prior work'."
+    echo "       terms. An unseeded alias map can turn related work into a false zero-result."
   fi
 }
 
-# --update: refresh ONLY the protocol block in an existing CLAUDE.md, leaving everything
-# outside the markers untouched. Scaffolding never overwrites, so without this an install
-# keeps its original protocol text forever.
-if [ "$UPDATE" -eq 1 ]; then
-  [ -f CLAUDE.md ] || { echo "no CLAUDE.md here -- run without --update to scaffold one"; exit 2; }
-  b=$(grep -c '<!-- agent-os:begin -->' CLAUDE.md || true)
-  e=$(grep -c '<!-- agent-os:end -->' CLAUDE.md || true)
-  if [ "$b" -ne 1 ] || [ "$e" -ne 1 ]; then
-    echo "ABORT: expected exactly one agent-os:begin and one agent-os:end marker (found $b / $e)."
-    echo "       Refusing to guess where the block is. No changes made."
-    exit 2
-  fi
-  # Whatever is between the markers is about to be replaced -- that is the point of
-  # --update. But a project that put its own rules in there loses them with no warning
-  # and no copy, which is what happened to one install: a project rule was gone and
-  # nobody knew until they went looking for it. The replacement stays; the silence does
-  # not. Save the outgoing block whenever it differs from what is going in.
-  awk '/<!-- agent-os:begin -->/{f=1;next} /<!-- agent-os:end -->/{f=0} f' CLAUDE.md > CLAUDE.md.aos-prevblock
-  awk '/<!-- agent-os:begin -->/{f=1;next} /<!-- agent-os:end -->/{f=0} f' "$TPL/CLAUDE.section.md" > "$TPL.aos-incoming.$$"
-  if cmp -s CLAUDE.md.aos-prevblock "$TPL.aos-incoming.$$"; then
-    rm -f CLAUDE.md.aos-prevblock
-  elif git ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1 && git diff --quiet -- CLAUDE.md 2>/dev/null; then
-    # Tracked and clean: the outgoing block is already in history, so writing a copy
-    # leaves an untracked file in every install on every protocol bump -- litter in the
-    # common case for a rescue that is only needed in the rare one. Say where it is.
-    rm -f CLAUDE.md.aos-prevblock
-    echo "NOTE   the replaced block differed from the shipped one."
-    echo "       CLAUDE.md is tracked and clean, so the old text is in git:"
-    echo "       git show HEAD:CLAUDE.md   (check it for project rules kept inside the markers)"
-  else
-    # Untracked or already modified -- git cannot give it back. Keep a copy.
-    echo "NOTE   the replaced block differed from the shipped one, and CLAUDE.md is not"
-    echo "       committed clean, so git cannot recover it. Saved as CLAUDE.md.aos-prevblock."
-    echo "       If this project kept its own rules inside the markers, they are in there."
-  fi
-  rm -f "$TPL.aos-incoming.$$"
+MARK_BEGIN='<!-- agent-os:begin -->'
+MARK_END='<!-- agent-os:end -->'
 
-  awk -v tpl="$TPL/CLAUDE.section.md" '
+validate_guidance() {
+  f="$1"
+  [ -f "$f" ] || return 0
+  b=$(grep -c "$MARK_BEGIN" "$f" || true)
+  e=$(grep -c "$MARK_END" "$f" || true)
+  if [ "$b" -ne 1 ] || [ "$e" -ne 1 ]; then
+    echo "ABORT: $f needs exactly one agent-os:begin and one agent-os:end marker (found $b / $e)."
+    echo "       Refusing to guess where the protocol block is. No guidance files changed."
+    return 2
+  fi
+}
+
+strip_guidance() {
+  awk '/<!-- agent-os:begin -->/{skip=1;next} /<!-- agent-os:end -->/{skip=0;next} !skip{print}' "$1"
+}
+
+update_guidance() {
+  f="$1"
+  if [ ! -f "$f" ]; then
+    cat "$PROTO" > "$f"
+    echo "CREATE $f (agent-os protocol)"
+    return 0
+  fi
+
+  prev="$f.aos-prevblock"
+  incoming="$f.aos-incoming.$$"
+  before="$f.aos-outside-before.$$"
+  after="$f.aos-outside-after.$$"
+  new="$f.aos-new"
+
+  awk '/<!-- agent-os:begin -->/{p=1;next} /<!-- agent-os:end -->/{p=0} p{print}' "$f" > "$prev"
+  awk '/<!-- agent-os:begin -->/{p=1;next} /<!-- agent-os:end -->/{p=0} p{print}' "$PROTO" > "$incoming"
+  strip_guidance "$f" > "$before"
+
+  if cmp -s "$prev" "$incoming"; then
+    rm -f "$prev"
+  elif git ls-files --error-unmatch "$f" >/dev/null 2>&1 && git diff --quiet -- "$f" 2>/dev/null; then
+    rm -f "$prev"
+    echo "NOTE   the replaced $f block differed; the old text is recoverable from git."
+  else
+    echo "NOTE   the replaced $f block differed and is not committed clean."
+    echo "       Saved the old block as $prev."
+  fi
+  rm -f "$incoming"
+
+  awk -v tpl="$PROTO" '
     /<!-- agent-os:begin -->/ { while ((getline l < tpl) > 0) print l; close(tpl); skip = 1; next }
     /<!-- agent-os:end -->/   { skip = 0; next }
     !skip { print }
-  ' CLAUDE.md > CLAUDE.md.aos-new
-  # sanity: the replacement must still carry both markers and keep the outside content
-  if ! grep -q '<!-- agent-os:begin -->' CLAUDE.md.aos-new || ! grep -q '<!-- agent-os:end -->' CLAUDE.md.aos-new; then
-    rm -f CLAUDE.md.aos-new
-    echo "ABORT: the rewritten file lost its markers. No changes made."
-    exit 2
+  ' "$f" > "$new"
+
+  if ! grep -q "$MARK_BEGIN" "$new" || ! grep -q "$MARK_END" "$new"; then
+    rm -f "$new" "$before" "$after"
+    echo "ABORT: rewritten $f lost protocol markers. No change made."
+    return 2
   fi
-  before=$(awk '/<!-- agent-os:begin -->/{f=1} !f' CLAUDE.md | wc -m)
-  after=$(awk '/<!-- agent-os:begin -->/{f=1} !f' CLAUDE.md.aos-new | wc -m)
-  if [ "$before" != "$after" ]; then
-    rm -f CLAUDE.md.aos-new
-    echo "ABORT: content above the marker changed. No changes made."
-    exit 2
+  strip_guidance "$new" > "$after"
+  if ! cmp -s "$before" "$after"; then
+    rm -f "$new" "$before" "$after"
+    echo "ABORT: content outside the protocol block changed in $f. No change made."
+    return 2
   fi
-  mv CLAUDE.md.aos-new CLAUDE.md
-  echo "UPDATE CLAUDE.md (agent-os block replaced; everything outside the markers untouched)"
+  rm -f "$before" "$after"
+  mv "$new" "$f"
+  echo "UPDATE $f (agent-os block replaced; outside text preserved)"
+}
+
+scaffold_guidance() {
+  f="$1"
+  if [ -f "$f" ]; then
+    if grep -q "$MARK_BEGIN" "$f" 2>/dev/null; then
+      echo "SKIP   $f (agent-os section already present)"
+    else
+      printf '\n' >> "$f"
+      cat "$PROTO" >> "$f"
+      echo "APPEND $f (agent-os section added)"
+    fi
+  else
+    cat "$PROTO" > "$f"
+    echo "CREATE $f"
+  fi
+}
+
+if [ "$UPDATE" -eq 1 ]; then
+  validate_guidance CLAUDE.md || exit 2
+  validate_guidance AGENTS.md || exit 2
+  update_guidance CLAUDE.md
+  update_guidance AGENTS.md
   update_scripts
   update_templates
   report_theirs
-  # The linter just got replaced, and a newer one is stricter. If this project carries
-  # legacy frontmatter the hook will now block every commit -- so say it here, loudly,
-  # instead of letting the next person discover it mid-commit with no idea what changed.
   if [ -x "$AOS/scripts/check-prompts.sh" ] || [ -f "$AOS/scripts/check-prompts.sh" ]; then
     lf=$(sh "$AOS/scripts/check-prompts.sh" 2>&1 | grep -c '^FAIL' || true)
     if [ "${lf:-0}" -gt 0 ]; then
       echo "WARN   the refreshed linter reports $lf failing doc(s) in this project."
-      echo "       core.hooksPath is $(git config core.hooksPath 2>/dev/null || echo unset);"
-      echo "       if it points at agent-os hooks, commits are blocked until those are fixed."
       echo "       Fix the frontmatter, or restore the old linter from git and upgrade later."
     fi
   fi
@@ -194,13 +204,12 @@ if [ "$UPDATE" -eq 1 ]; then
     echo "UPDATE $AOS/VERSION ($AOS_VERSION)"
   fi
   exit 0
-
 fi
-echo "scaffold target: $TARGET/$AOS  (eval=$WANT_EVAL)"
 
+echo "scaffold target: $TARGET/$AOS  (eval=$WANT_EVAL)"
 mkdir -p "$AOS/prompts/tasks/completed" "$AOS/prompts/errors" "$AOS/prompts/reference" "$AOS/docs" "$AOS/scripts/hooks"
 
-copy() { # src dst
+copy() {
   if [ -e "$2" ]; then echo "SKIP   $2 (exists)"; else mkdir -p "$(dirname "$2")"; cp "$1" "$2"; echo "CREATE $2"; fi
 }
 
@@ -224,37 +233,21 @@ copy "$SCRIPT_DIR/pre-commit"            "$AOS/scripts/hooks/pre-commit"
 chmod +x "$AOS"/scripts/*.sh "$AOS"/scripts/hooks/pre-commit 2>/dev/null || true
 
 if [ "$WANT_EVAL" -eq 1 ]; then
-  copy "$TPL/prompts/eval/README.md"   "$AOS/prompts/eval/README.md"
-  copy "$TPL/prompts/eval/eval-set.md" "$AOS/prompts/eval/eval-set.md"
+  copy "$TPL/prompts/eval/README.md"      "$AOS/prompts/eval/README.md"
+  copy "$TPL/prompts/eval/eval-set.md"    "$AOS/prompts/eval/eval-set.md"
 fi
 
-# CLAUDE.md stays at the project ROOT (Claude Code reads it there); only the protocol section is added.
-MARK="<!-- agent-os:begin -->"
-if [ -f CLAUDE.md ]; then
-  if grep -q "$MARK" CLAUDE.md 2>/dev/null; then
-    echo "SKIP   CLAUDE.md (agent-os section already present)"
-  else
-    printf '\n' >> CLAUDE.md
-    cat "$TPL/CLAUDE.section.md" >> CLAUDE.md
-    echo "APPEND CLAUDE.md (agent-os section added)"
-  fi
-else
-  cat "$TPL/CLAUDE.section.md" > CLAUDE.md
-  echo "CREATE CLAUDE.md"
-fi
+scaffold_guidance CLAUDE.md
+scaffold_guidance AGENTS.md
 
 sh "$AOS/scripts/reindex.sh" >/dev/null 2>&1 && echo "CREATE $AOS/prompts/index.jsonl"
+[ -n "$AOS_VERSION" ] && printf '%s\n' "$AOS_VERSION" > "$AOS/VERSION"
 
 echo ""
 echo "Done. Next:"
 echo "  1) enable the forced-sync hook: git config core.hooksPath $AOS/scripts/hooks"
-echo "     then confirm it can actually run: sh $AOS/scripts/portability-test.sh"
-echo "     (git refuses a hook without the exec bit, and says so only in a passing hint)"
-echo "  2) fill $AOS/docs/ with this project's source of truth (initial full scan)"
-echo "  3) fill $AOS/prompts/eval/eval-set.md -- 5 rows, from what has actually bitten"
-echo "     this project. It is the ONLY way to tell later whether a rule still earns its"
-echo "     place; without it, adding and removing rules are both guesses."
-echo "     Measured across 19 installs: 17 never filled it in."
-echo "  4) fill $AOS/docs/07_known-risks.md as lessons appear -- promoting a lesson is"
-echo "     what makes archiving the incident safe."
+echo "     then confirm it can run: sh $AOS/scripts/portability-test.sh"
+echo "  2) fill $AOS/docs/ with this project's source of truth from a real repository scan"
+echo "  3) seed $AOS/prompts/eval/eval-set.md with failures that actually happened"
+echo "  4) promote durable lessons to $AOS/docs/07_known-risks.md before archiving incidents"
 echo "  5) lint: sh $AOS/scripts/check-prompts.sh   |  health: sh $AOS/scripts/agent-os-health.sh"

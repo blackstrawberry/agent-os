@@ -1,0 +1,15 @@
+{
+  "name": "agent-os",
+  "interface": {
+    "displayName": "agent-os"
+  },
+  "plugins": [
+    {
+      "name": "agent-os",
+      "source": {
+        "source": "local",
+        "path": "."
+      }
+    }
+  ]
+}

@@ -1,50 +1,43 @@
 ---
 name: error-log
-description: When the agent judges it made a mistake or error during work, self-write a structured doc (with frontmatter) into .agent-os/prompts/errors. Use on wrong assumptions, broken fixes, wrong tool/path usage, regressions, and security slips. Also use on "log this error" / "record the mistake" requests.
+description: Record an agent mistake as structured agent-os error memory, or update the existing record when the root cause recurs. Use on wrong assumptions, broken fixes, wrong tool/path usage, regressions, security slips, or explicit requests to log a mistake. In read-only hosts, prepare the exact update without claiming it was written.
 ---
 
 # error-log
 
 <Purpose>
-Mistakes as a structured pattern, not a raw log. Record your own unasked.
+Turn repeatable mistakes into structured patterns, not raw logs.
 </Purpose>
 
-<Use_When>
-A wrong assumption, a fix that broke something, a wrong file/tool/path, a security or data
-near-miss, or the user pointing out a mistake.
-Not for a self-corrected typo that cannot recur.
-</Use_When>
-
 <Steps>
-1. **Check for a recurrence first — do not reach for an id yet.**
+1. Check recurrence before choosing an id.
+   **Shell available:**
    ```sh
-   sh .agent-os/scripts/rank.sh -q "<root cause in your own words>" -f "<files>" -k error -n 5
+   sh .agent-os/scripts/rank.sh -q "<root cause>" -f "<files>" -k error -n 5
    ```
-   Compare **root causes**, not symptoms — one cause wears many symptoms. Judge on `rc`.
+   **No shell:** search `.agent-os/prompts/errors/` by root cause, paths, tags and summary.
+   Compare root causes, not symptoms.
 
-2. **Same root cause -> no new doc** (a second file splits one trap into apparent one-offs).
-   Update it: bump `recurrence`, `last_seen` = today, `status: open` again if it had been
-   resolved, add new paths to `files`, add a `## Recurrence history` row. Add, never overwrite.
+2. Same root cause -> no new doc. In a writable host bump `recurrence`, set `last_seen` to today,
+   reopen if needed, merge new paths, and append a recurrence-history row. In read-only mode,
+   return that exact proposed edit.
 
-3. **Different root cause -> new doc.** Match the id convention already in the directory
-   (`E0007_slug.md` or `ERR-YYYY-MM-DD-slug.md` — do not assume). Cross-link the near-miss
-   you compared against via `related_errors` on both sides.
-   - Fill every field the template lists; its comments carry the allowed values.
-     **Enums: exactly one word, nothing appended** — the linter rejects the rest.
-     `tags` 3-8 words the next person will type hitting this same wall.
-     Never write secret values — point at the location.
+3. Different root cause -> writable hosts create the next id using the directory's existing id
+   convention and `_TEMPLATE.md`. Fill every required field; enums are exact values, tags are
+   words someone will search later, and secrets are never copied. Read-only hosts return the
+   proposed path/frontmatter/body and state it was not written.
 
-4. Body: what happened (quote messages verbatim) / root cause (verified) / fix / prevention /
-   recurrence history. Add the id to the related task's `related_errors`.
+4. Record: what happened, verified root cause, fix, prevention, recurrence history. Cross-link the
+   related task and near-miss errors when applicable.
 
-5. **At `recurrence` 3+, editing the doc is not a response.** Promote it to
-   `docs/07_known-risks.md`, or open a task for a mechanical gate (hook, lint, test).
+5. At `recurrence` 3+, editing the incident is not enough: promote the lesson to
+   `docs/07_known-risks.md` or open a task for a mechanical gate.
 </Steps>
 
 <Output>
-New: path + one-line lesson. Recurrence: which doc, to what count, and at 3+ which escalation.
+New: path + one-line lesson. Recurrence: document + new count + required escalation at 3+.
 </Output>
 
 <Self_Maintenance>
-Sync with `prompts/errors/_TEMPLATE.md`. Budget 2000 chars.
+Sync with `prompts/errors/_TEMPLATE.md`. Keep this workflow host-neutral.
 </Self_Maintenance>

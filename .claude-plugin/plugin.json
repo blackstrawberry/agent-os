@@ -1,12 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "agent-os",
-  "version": "0.7.3",
-  "description": "An agent operating system for legacy / high-ambiguity codebases. Scaffolds frontmatter-scannable task, error and decision docs plus source-of-truth docs, then makes them findable: a generated index carrying weighting signals, a relevance ranker that returns the top few instead of everything, and a per-project alias map so a question in one language reaches documents written in another. Keeps memory honest with a frontmatter linter, recurrence counting that escalates at three repeats, coldness-based compaction (/agent-os:archive), and a health check for what has gone quiet. Three self-maintaining router skills: task-scan, error-check, error-log. Run /agent-os:init.",
+  "version": "0.8.0",
+  "description": "A host-independent project memory and operating protocol for legacy / high-ambiguity codebases. Scaffolds frontmatter-scannable task, error and decision docs plus source-of-truth docs, then makes them findable with relevance ranking and a per-project alias map. Keeps memory honest with linting, recurrence escalation, bounded-memory compaction and health checks. Shared Skills work across Claude Code, Codex and ChatGPT; run /agent-os:init in Claude or agent-os-init from an OpenAI host.",
   "author": {
     "name": "kimjonghan",
     "email": "jonghan721@gmail.com"
   },
   "license": "MIT",
-  "keywords": ["legacy", "documentation", "source-of-truth", "tasks", "errors", "skills", "scaffold", "agent"]
+  "keywords": ["legacy", "documentation", "source-of-truth", "tasks", "errors", "skills", "scaffold", "agent", "codex", "chatgpt"]
 }

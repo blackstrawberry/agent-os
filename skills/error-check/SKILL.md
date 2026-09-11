@@ -1,49 +1,42 @@
 ---
 name: error-check
-description: Before or while working, scan .agent-os/prompts/errors frontmatter to check whether the same or a similar mistake happened before, and avoid repeating it. Use before editing code, before debugging, on "have I made this mistake before?", or when a recurring error is suspected.
+description: Before local or broad code work, check agent-os known risks and prior error records so the same trap is not repeated. Use before editing/debugging, on recurring-error questions, and in ChatGPT-style read-only repository analysis as well as shell-capable hosts.
 ---
 
 # error-check
 
 <Purpose>
-Read the error history FIRST so the same trap is not sprung twice.
+Read durable lessons and the most relevant error history BEFORE changing code.
 </Purpose>
 
-<Use_When>
-Before any local or broad change. Especially shared core, DB queries, environment-specific
-code, external integrations, deploys.
-</Use_When>
-
 <Steps>
-0. Read `.agent-os/docs/07_known-risks.md` first — one file of rules instead of N incident
-   records. What it covers needs no further search. Its absence is itself a finding.
+0. Read `.agent-os/docs/07_known-risks.md` first. What it already covers needs no incident dump.
 
-1. Rank, do not scan:
+1. Find prior errors without loading them all.
+   **Shell available:**
    ```sh
    sh .agent-os/scripts/rank.sh -q "<what you are about to do>" -f "<paths>" -k error -n 8
    ```
-   **Open the top 3 at most.** Do NOT grep the index for `"k":"error"` — that pulls every
-   error into context.
-   - Score 10+ = a **file hit**: a path you will touch is in that error's `files`. Act on it
-     with zero keyword matches. Filled on ~20% of docs — a miss means "no information".
-   - Do read `recof` on a hit: the earlier errors this one repeats are worth opening too.
-   - `rc` is matched, so describing the failure mode works, not just naming the component.
-   - No `rank.sh`: grep the index by `area`/`cat`/`tags`/`summary`. No index: `reindex.sh`.
-     Old topic: also `prompts/archive/errors-*.jsonl`.
+   **No shell:** search `.agent-os/prompts/errors/` by root cause, summary, tags, keywords and
+   touched paths; include archived error JSONL only for old topics. Prefer path/root-cause hits.
+   Open the top 3 at most.
 
-2. Read the root-cause and prevention sections of any match and apply them now.
-   Warn briefly: "Past EXXXX in the same area — watch out for: ...".
+2. Read root cause and prevention on matches and apply them now. A recorded file-path hit matters
+   even when wording differs. Follow `related_errors` when a hit says it recurred from another id.
+
+3. If a search should have matched but did not, writable hosts add the missing alias to
+   `.agent-os/vocab.txt`; read-only hosts report the missing alias instead.
 </Steps>
 
 <Output>
-"Related past errors: [EXXXX -- summary -- caution]" — or "no related history". Then proceed.
+"Related past errors: [id -- summary -- caution]" — or "no related history". Then proceed.
+Never claim a repository update in read-only mode.
 </Output>
 
 <Links>
-New mistake -> `error-log`. A search that should have hit and did not -> add the missing
-word to `.agent-os/vocab.txt`.
+A new mistake -> `error-log`.
 </Links>
 
 <Self_Maintenance>
-Sync matched field names with `prompts/errors/_TEMPLATE.md`. Budget 2000 chars.
+Sync matched fields with `prompts/errors/_TEMPLATE.md`. Keep retrieval bounded.
 </Self_Maintenance>

@@ -2,177 +2,173 @@
 
 **언어:** [English](GUIDE.md) | 한국어 | [日本語](GUIDE.ja.md)
 
-한 번 셋업하고 나면 그 뒤로는 평범하게 말하면 된다. 그 사이 프로젝트의 지식은 썩는 대신
-쌓인다. 이 문서는 **무엇을 하는가**이고, **왜 이렇게 만들었는가**는
-[CONCEPT.ko.md](CONCEPT.ko.md) 에 있다.
+한 번 설정한 뒤에는 평소처럼 말하면 된다. 프로젝트 지식은 `.agent-os/` 하나에 쌓이고,
+Claude Code·Codex·ChatGPT는 각자 얇은 어댑터로 같은 메모리를 읽는다. 이 문서는 *운영법*,
+[CONCEPT.ko.md](CONCEPT.ko.md)는 *왜 이런 구조인지*를 설명한다.
 
 ---
 
-## 1. 셋업 (프로젝트당 1회)
+## 1. 호스트 어댑터 선택
 
-```
-/plugin marketplace add /path/to/agent-os-plugin
+| 호스트 | 설치/진입점 | 프로젝트 지속 지침 | 모드 |
+|---|---|---|---|
+| Claude Code | Claude plugin, `/agent-os:init` | root `CLAUDE.md` | local full mode |
+| Codex | OpenAI plugin, `$agent-os-init` / `$agent-os` | root `AGENTS.md` | Codex/local full mode |
+| ChatGPT | OpenAI plugin Skills (`@agent-os` 등) | Skill이 주 진입점. repo `AGENTS.md` 자동 로드를 전제로 하지 않음 | capability에 따라 다름 |
+
+일반 ChatGPT GitHub app은 read-only다. 이 경우 agent-os는 과거 task/error/known-risk를 조사하고
+정확한 수정안을 만들 수 있지만, task 생성·종료·commit·push가 실제로 됐다고 말하면 안 된다.
+현재 surface에 repository write 또는 Codex/Work 수준 실행환경이 있으면 같은 Skills가 writable
+mode로 동작한다.
+
+---
+
+## 2. 프로젝트 최초 설정
+
+Claude Code:
+
+```text
+/plugin marketplace add <owner>/<repo>
 /plugin install agent-os@agent-os
-/agent-os:init                 # --no-eval 은 평가셋 제외
+/agent-os:init
 ```
 
-이미 깔려 있다면 `sh <plugin>/scripts/init.sh --update .` — `CLAUDE.md` 의 프로토콜 구간만
-갱신하고 마커 바깥은 손대지 않는다.
+Codex / ChatGPT: `.agents/plugins/marketplace.json` + `.codex-plugin/plugin.json`이 표현하는
+OpenAI plugin source에서 **agent-os**를 설치하고, Codex는 `$agent-os-init`, ChatGPT는
+`@agent-os-init`을 호출한다.
 
-그다음, **건너뛰었을 때 손해가 큰 순서**로:
-
-1. **Source of Truth 를 만든다.** 에이전트에게 저장소 전체를 스캔시켜 `.agent-os/docs/01..07`
-   (개요·아키텍처·디렉토리 맵·코어·데이터 계층·컨벤션·알려진 위험)을 채운다.
-   **한 번은 직접 읽어라** — 이후 모든 작업이 이 파일들을 믿는다. 여기 틀린 사실이 하나
-   들어가면 이후 작업 전체를 조용히 오염시킨다. 확인된 사실만.
-2. **평가셋 5행을 채운다** — `.agent-os/prompts/eval/eval-set.md` 에, **이 프로젝트가 실제로
-   물린 것**으로. 설치 19곳을 세어보니 17곳이 안 채웠다. 나중에 「이 규칙이 아직 값을 하는가」를
-   물을 수 있는 유일한 계측기다.
-3. **훅을 켠다**: `git config core.hooksPath .agent-os/scripts/hooks`, 그리고
-   `sh .agent-os/scripts/portability-test.sh` 로 **정말 도는지** 확인한다 — git 은 실행권한
-   없는 훅을 거부하는데, 그 사실을 스크롤에 묻히는 hint 한 줄로만 알린다.
-4. **`.agent-os/vocab.txt` 를 이 프로젝트가 쓰는 말로 정리한다.** 한 언어로 물어도 다른 언어로
-   적힌 문서에 닿게 하는 것이 이것이다.
-
----
-
-## 2. agent-os 와 보내는 하루
-
-아래에 명령어는 하나도 없다. 말하면 스킬이 그 말에 반응한다.
-
-**당신:** *"상세 페이지 매매상태가 목록 페이지랑 다르게 나와 — 맞춰줘"*
-
-에이전트는 손대기 전에 **프로젝트가 이미 아는 것부터 순위로 훑는다.** `task-scan` 이 인덱스
-상위 3건을 열고, `error-check` 가 지금 고칠 파일에 걸린 함정을 올리고, `.agent-os/docs/` 를
-`07_known-risks.md` 부터 읽는다. 결정 기록이 걸리면 그게 최우선이다 — 여기서 누군가 이미
-어떤 선택지를 기각했고, 그 문서의 *Revisit when* 이 그 판단이 아직 유효한지 말해준다.
-
-**당신:** *"태스크부터 만들어줘"*
-
-```
-.agent-os/prompts/tasks/04_buysell-detail-status-mismatch.md
-  status: planned      Request / Scope·non-scope / Plan 작성됨
-```
-
-frontmatter 를 칠 일은 없다. 채번·템플릿 복사·날짜·`status`·`tags` 까지 스킬이 한다 —
-tags 가 비면 랭커가 나중에 이 문서를 못 찾는다.
-
-> ### ▸ 게이트 1 — 당신이 Scope 와 Plan 을 읽는다
-> 오해를 고치는 가장 싼 자리다. 범위를 고치거나, 틀린 전제를 물리거나, 진행시킨다.
-> **틀린 프레임 위에서 수행이 시작되는 것이 비싼 실수다.**
-
-**당신:** *"진행해"*
-
-에이전트가 구현하면서 결정과 만진 파일을 **Work log** 에 남기고, 위험한 단계(공용 코어·DB·
-마이그레이션) 전에 `error-check` 를 다시 돌리고, 자기 작업을 스스로 검증한다.
-
-> ### ▸ 게이트 2 — 당신이 Verification 절과 diff 를 읽는다
-> 수용하거나 되돌려보낸다. 비가역이거나 외부로 나가는 것 — 배포·삭제·자격증명·외부 호출 —
-> 은 **매번 여기서 멈추고 당신에게 묻는다.**
-
-**당신:** *"종료 처리해줘"*
-
-닫기 전에 에이전트가 배운 것을 동기화한다. 동작이 바뀌었으면 `.agent-os/docs/`, 실수했으면
-`error-log`(먼저 검색하므로 같은 근본원인은 새 문서 대신 기존 문서의 `recurrence` 를 올린다),
-진짜 대안을 버렸고 되돌리는 비용이 크면 결정 기록. 그다음 `status: completed`, 파일은
-`completed/` 로, pre-commit 훅이 커밋할 것을 린트한다.
-
-**요청이 그냥 「처리」된 게 아니라 Source of Truth 가 자랐다.** 다음 작업은 이번보다 많은
-것에서 출발한다.
-
----
-
-## 3. 뭐라고 말하면 뭐가 도나
-
-| 이렇게 말하면 | 뜨는 것 | 왜 걸리나 |
-|---|---|---|
-| "이거 태스크로 정리해줘" | `task-scan` | 찾기뿐 아니라 태스크 문서 **작성**까지 담당 |
-| "이거 전에 해봤나?" | `task-scan` | 관련 선행 작업부터 대서 재작업을 막는다 |
-| "방금 실수 기록해줘" | `error-log` | 시키지 않아도 스스로 실수를 인지하면 발동 |
-| "이런 실수 전에도 했나?" | `error-check` | 코드 수정·디버깅 직전에도 자동으로 |
-| "메모리 좀 정리해줘" | `/agent-os:archive` | 콜드 문서를 미리보기하고 승인하면 아카이브 |
-
-작업은 **순서를 행진하는 게 아니라 크기를 판정한다.** trivial(커밋 하나, 명령 하나, 한 줄
-답변)은 바로 답한다. 국소(파일 하나, 명확한 버그)는 `error-check` 만. 위의 하루를 다 도는 건
-**광역** — 여러 파일, 설계 변경, 신규 기능 — 뿐이다.
-
-검색은 grep 이 아니라 랭킹이다:
+shell이 있으면 호스트와 무관하게 직접:
 
 ```sh
-sh .agent-os/scripts/rank.sh -q "<질의>" -f "<지금 만질 파일 경로>" -n 8
+bash <plugin>/scripts/init.sh [--no-eval] /path/to/project
+bash <plugin>/scripts/init.sh --update /path/to/project
 ```
 
-`-f` 가 최강 신호다 — 지금 만질 파일에 관한 과거 에러는 **키워드가 하나도 안 겹쳐도** 올라온다.
-어느 언어로 물어도 된다. 걸렸어야 할 검색이 빈손이면 `vocab.txt` 에 줄이 빠진 것이니 거기에
-추가한다. **질의에 맞추려고 옛 문서를 다시 태깅하지 않는다.**
+installer는 `.agent-os/`와 root `CLAUDE.md`/`AGENTS.md`를 만든다. 두 파일의 agent-os 구간은
+하나의 canonical protocol에서 나오며, `--update`는 marker 밖 사용자 텍스트를 보존한다.
+0.8 이전 Claude-only 프로젝트는 빠진 `AGENTS.md`가 추가된다. marker가 깨져 있으면 한쪽만
+업데이트한 상태로 남기지 않고 중단한다.
+
+설정 후:
+
+1. 실제 repo 전체를 스캔해 `.agent-os/docs/` Source of Truth 작성
+2. 실제로 물린 사례로 eval set 작성
+3. `git config core.hooksPath .agent-os/scripts/hooks`
+4. 새 머신에서는 `sh .agent-os/scripts/portability-test.sh`
+5. 프로젝트 용어/다국어 별칭을 `.agent-os/vocab.txt`에 추가
 
 ---
 
-## 4. 당신이 루프 안에 있어야 하는 곳
+## 3. 광역 작업 한 번의 흐름
 
-위의 게이트 2개, 그리고 에이전트가 혼자 정하지 않는 3가지: **비가역·외부 작업**(배포·삭제·
-자격증명·외부 호출), **보안 결정**(키 로테이션, 노출된 도구), **아카이브 시 활성 집합에서
-무엇을 뺄지**. 셋업 때의 Source of Truth 승인이 네 번째이고, 나머지 전부가 그 위에 서 있다.
-그 외는 에이전트가 알아서 돌린다.
+**사용자:** “상세 페이지의 매수/매도 상태가 리스트와 다르다. 맞춰줘.”
+
+수정 전에 `07_known-risks.md`를 읽고, 관련 task/ADR와 과거 error를 찾는다. shell mode에서는:
+
+```sh
+sh .agent-os/scripts/rank.sh -q "<요청 단어>" -f "<수정할 경로>" -n 8
+```
+
+상위 3건까지만 연다. shell이 없으면 repository search로 task/error/ADR frontmatter를 찾고,
+파일 경로와 root cause 일치를 우선한다.
+
+**사용자:** “태스크부터 만들어줘.”
+
+writable host는 `.agent-os/prompts/tasks/NN_slug.md`, `status: planned`를 실제 생성한다.
+read-only host는 동일한 frontmatter/본문 초안을 반환하고 **작성하지 않았다고 명시**한다.
+
+> **Gate 1:** Scope / Plan을 사람이 읽는다. 프레임이 틀렸다면 실행 전에 고친다.
+
+**사용자:** “진행해.”
+
+구현하고, 검증된 결정/실수를 기록하고, 위험한 변경 전에는 prior error를 다시 확인한다.
+
+> **Gate 2:** Verification / diff를 사람이 확인한다. 되돌리기 어렵거나 외부에 영향을 주는 행동은
+> 여전히 승인이 필요하다.
+
+**사용자:** “종료 처리.”
+
+writable mode는 docs 동기화 → 필요 시 error/ADR 기록 → `status: completed` → `completed/` 이동.
+read-only mode는 같은 closeout 체크리스트를 제시하되 적용했다고 말하지 않는다.
 
 ---
 
-## 5. 경고가 뜨면
+## 4. 어떤 말이 어떤 Skill을 부르나
 
-`agent-os-health.sh` 가 침묵을 깨는 도구다. **읽기 전용** — 말해줄 뿐 대신 하지 않는다.
-1초면 끝나니 내킬 때 돌려라.
-
-| 이렇게 나오면 | 이렇게 한다 |
+| 말 | 동작 |
 |---|---|
-| 문서가 인덱스보다 최신 | `sh .agent-os/scripts/reindex.sh` — 모든 스캔이 낡은 카탈로그를 읽고 있다 |
-| 인덱스 초과 / 콜드 문서 | `/agent-os:archive` — 미리보기 먼저. **아카이브 전에 교훈을 known-risks 로 승격하라.** 승격 안 된 교훈은 아카이브하면 그냥 사라진다 |
-| `recurrence` 3+ 인데 known-risks 에 없음 | 3번 반복은 「산문으로는 못 막는다」는 증거다. 승격하거나, 기계적 게이트(훅·린트·테스트) 태스크를 연다 |
-| 에러 문서는 있는데 `07_known-risks.md` 가 없음 | 아직 아무것도 규칙이 안 됐다. 에러는 기억이고, 반복을 멈추는 건 규칙이다 |
-| 열린 태스크가 30일+ 방치 | 닫거나, 왜 막혀 있는지 적어라 |
-| pin 이 임계 초과 | `pin` 은 **영구 하중**이지 중요하다는 뜻이 아니다. 남발하면 콜드 탐지가 아예 죽는다 |
-| 평가셋이 아직 배포된 그대로 | 5행을 채워라. 없으면 규칙을 **더하는 것도 빼는 것도** 추측이다 |
-| 주입 텍스트 예산 초과 | 추가가 아니라 **교체**. 이유 설명은 매 세션 읽히는 프롬프트가 아니라 `.agent-os/docs/` 로 |
+| “이 repo에서 agent-os 써줘” | `agent-os` |
+| “태스크로 정리 / 전에 했나?” | `task-scan` |
+| “이 실수 전에 했나?” | `error-check` |
+| “방금 실수 기록” | `error-log` |
+| “agent-os 초기화/업데이트” | `agent-os-init` (Claude: `/agent-os:init`) |
+| “콜드 메모리 정리” | `agent-os-archive` (Claude: `/agent-os:archive`) |
 
-각자 주기로 돌릴 것이 둘 더 있다. **`tags-gap.sh`** 는 tags 가 비어서 아무것도 못 찾는 문서를
-나열한다 — 보고만 한다. 최고 가중치 필드에 **틀린** 태그가 박히는 게 빈 것보다 나쁘기 때문이다.
-**`bare-test.md`** 는 모델 세대마다 1회, 프로토콜 구간을 주석 처리한 채로 평가셋을 돌리고 다시
-켜서 돌려 비교한다. 규칙을 **삭제**할 근거가 되는 유일한 것이고, **차이가 없다는 결과 자체가
-발견**이지 실패한 실험이 아니다. 이게 없으면 규칙은 쌓이기만 한다.
+작업은 절차가 아니라 크기로 나눈다. trivial은 바로 처리, local은 보통 error-check만,
+broad만 known-risks + prior task/ADR + error history를 먼저 읽는다.
 
 ---
 
-## 6. 치트시트
+## 5. Capability mode
 
-| 항목 | 무엇인가 |
+**Full mode** — shell + writable files. script/hook/task lifecycle를 그대로 수행.
+
+**Repository mode** — repo read/write는 있지만 shell 없음. 같은 파일을 repository tool로 검색·수정하며,
+실행하지 못한 script 결과를 지어내지 않는다.
+
+**Read-only mode** — 검색/읽기만 가능. 관련 메모리를 제한적으로 조회하고 정확한 수정안을 만든다.
+file/status/commit/push가 바뀌었다고 주장하지 않는다.
+
+---
+
+## 6. 메모리 유지보수
+
+`agent-os-health.sh`는 read-only다.
+
+| 경고 | 대응 |
 |---|---|
-| `/agent-os:init [--no-eval]` | 프로젝트에 구조 스캐폴드 |
-| `init.sh --update` | 기존 `CLAUDE.md` 의 프로토콜 구간만 갱신 |
-| `/agent-os:archive [--apply]` | 콜드 문서 아카이브(미리보기 → 적용) |
-| 스킬 `task-scan` | 관련 선행 작업·기각된 결정 찾기, 새 태스크 문서 작성도 |
-| 스킬 `error-check` | 작업 전 과거 실수 확인 |
-| 스킬 `error-log` | 에이전트가 자기 실수를 기록(먼저 검색, 재발은 카운트) |
-| `CLAUDE.md` | 항상 로드되는 작업 프로토콜 (예산 3,000자) |
-| `.agent-os/docs/` | Source of Truth (실스캔으로 당신이 채운다) |
-| `.agent-os/docs/07_known-risks.md` | 함정을 규칙으로. **작업 전에 읽는다** |
-| `.agent-os/docs/adr/` | 결정: 무엇을 기각했고 무엇이 바뀌면 다시 보나 |
-| `.agent-os/vocab.txt` | 개념 → 언어별 표기 |
-| `.agent-os/prompts/tasks/` `errors/` | 작업 메모리(frontmatter 문서) |
-| `.agent-os/prompts/eval/eval-set.md` | 정답 있는 5문. 규칙 수명을 재는 유일한 도구 |
-| `.agent-os/prompts/index.jsonl` | 랭커가 읽는 생성 카탈로그 |
-| `rank.sh -q "..." -f "경로"` | **찾을 때 쓰는 것.** 전건이 아니라 상위 몇 건 |
-| `reindex.sh` | 인덱스 재생성 |
-| `check-prompts.sh [--report]` | frontmatter 린트; `--report` 는 실패하지 않는다 |
-| `tags-gap.sh` | 아무것도 못 찾는 문서(tags 빔) |
-| `agent-os-health.sh [--oneline]` | 조용해진 것들. 읽기 전용 |
-| `portability-test.sh [-v]` | 어느 머신에서나 같은 답인가. 새 머신에서 먼저 |
-| `bare-test.md` | 이 하네스가 아직 값을 하는가 |
-| `git config core.hooksPath .agent-os/scripts/hooks` | 강제 동기화 on |
+| docs가 index보다 새로움 | `reindex.sh` |
+| cold docs / index 예산 초과 | archive preview, durable lesson 먼저 승격 |
+| recurrence 3+ 미승격 | known-risk 또는 기계적 gate |
+| 오래 열린 task | 종료 또는 blocked 이유 기록 |
+| pin 과다 | 영구 load-bearing이 아닌 것은 해제 |
+| eval set 비어 있음 | 실제 known-answer 사례 추가 |
+| protocol/skill 예산 초과 | 계속 append하지 말고 규칙 교체 |
 
-**새 머신에서는 `portability-test.sh` 부터 돌려라.** 체크아웃이 안 옮겨주는 클론 로컬 설정이
-둘 있다 — `core.hooksPath` 는 꺼져 있어 커밋 게이트가 없고, 실행권한을 잃은 훅은 git 이
-거부한다(macOS·Linux 에서 **조용히**). 구현이 갈리는 자리도 같이 본다. macOS `awk` 는
-`length()` 를 바이트로 세고 GNU `awk` 는 문자로 센다. glob 순서는 `LC_COLLATE` 를 타서 같은
-인덱스가 로케일마다 **순서만** 달라진다. 모든 스크립트가 `LC_ALL=C` 를 고정하는 이유고, 그게
-유지되는지 확인하는 것이 이 테스트다.
+나이만으로 문서가 cold가 되지는 않는다. archive 후에도 전문은 git history에 남는다.
 
-**왜** 이렇게 만들었는지는 [CONCEPT.ko.md](CONCEPT.ko.md) 를 보라.
+---
+
+## 7. 배포 검증
+
+plugin 개발자는:
+
+```sh
+sh scripts/host-adapter-test.sh
+```
+
+검사 대상: canonical/Claude/AGENTS protocol drift, Claude/OpenAI manifest name·version drift,
+Skill metadata, fresh init, marker 밖 텍스트 보존, Claude-only migration, malformed marker의
+fail-closed. OS/awk/locale 차이는 `portability-test.sh`가 담당한다.
+
+---
+
+## 8. 치트시트
+
+| 항목 | 의미 |
+|---|---|
+| `agent-os` | 공용 protocol/router Skill |
+| `agent-os-init` | cross-host init/update |
+| `agent-os-archive` | cold memory 관리 |
+| `task-scan` | prior task/ADR + task lifecycle |
+| `error-check` | 작업 전 과거 실수 확인 |
+| `error-log` | 실수/재발 구조화 기록 |
+| `CLAUDE.md` | Claude view |
+| `AGENTS.md` | Codex view |
+| `.agent-os/docs/` | 검증된 Source of Truth |
+| `07_known-risks.md` | 함정을 규칙으로 승격한 파일 |
+| `rank.sh` | bounded relevance retrieval |
+| `host-adapter-test.sh` | host/plugin 배포 게이트 |
+| `portability-test.sh` | 머신 이식성 게이트 |
+
+설계 이유는 [CONCEPT.ko.md](CONCEPT.ko.md) 참조.

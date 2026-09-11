@@ -2,102 +2,113 @@
 
 **언어:** [English](README.md) | 한국어 | [日本語](README.ja.md)
 
-레거시/모호한 코드베이스를 위한 **에이전트 운영 체계** — Claude Code 플러그인.
+레거시/모호한 코드베이스를 위한 **호스트 독립형 에이전트 운영 체계**. Claude Code, Codex, ChatGPT에서 같은 프로젝트 메모리를 공유한다.
 
-크거나 오래된 코드베이스에서 AI 에이전트는 의도가 샌다: 확인 대신 추측하고, 과거 실수를 반복하고, 문서를 노후화시킨다. agent-os는 모델이 아니라 **구조**를 고친다. 프로젝트에 단일 진실(Source of Truth), 스캔 가능한 태스크/에러 메모리, 자가 점검 스킬, 강제 동기화 훅을 부여해 — *루프를 따랐을 때* 에이전트가 시간이 갈수록 **더 정확**해질 수 있게 한다. 자동 보장이 아니라 사람이 루프에 남는 규율 스캐폴드다.
+agent-os의 본체는 특정 모델이 아니라 `.agent-os/`다. 태스크·에러·ADR·Source of Truth·랭킹·메모리 유지 규칙은 하나만 두고, Claude/Codex/ChatGPT는 얇은 어댑터로 같은 정보를 읽는다.
 
-> **사용법:** **[운영 가이드](docs/GUIDE.ko.md)** — human-in-the-loop 루프(셋업 -> 태스크 -> 리뷰 -> 수행 -> 자체개선 -> 반복). 여기서 시작.
->
-> 전체 배경은 **[docs/CONCEPT.ko.md](docs/CONCEPT.ko.md)**. 아이디어를 이해·수용하려면 읽어볼 것.
+> **운영법:** [운영 가이드](docs/GUIDE.ko.md) · 배경: [CONCEPT](docs/CONCEPT.ko.md)
 
-## 핵심 아이디어 (요약)
-agent-os가 빌려온 발상(Anthropic의 *스킬* 구축 글): 과거 데이터를 더 줘도 정확도는 거의 안 오르고, 정확도를 끌어올리는 건 **구조화된 절차 지식(=스킬)** 이다. agent-os는 이 발상을 일상 코딩 작업에 가볍게 적용한 — 아직 측정되지 않은 — 4층 구조다. 실제 효과는 Validation 층으로 직접 측정한다.
+## 핵심 구조
 
-- **Foundation** (`CLAUDE.md`): 모든 요청이 따르는 작업 프로토콜(라우터).
-- **Source of Truth** (`.agent-os/docs/`): 실제 스캔으로 작성한, 검증된 시스템 설명. 코드와 다르면 코드 확인 후 docs를 고친다.
-- **Skills**: 라우터 스킬 3종 — `task-scan`(관련 과거 작업 찾기), `error-check`(실수 재발 방지), `error-log`(에이전트가 스스로 실수 기록).
-- **Validation** (`.agent-os/prompts/eval/`): 정답이 명확한 평가셋으로 변경이 개선인지 수치 확인 — 그리고 **그 규칙이 아직 값을 하는지**도.
+- **Foundation**: canonical 프로토콜 하나. Claude Code는 루트 `CLAUDE.md`, Codex는 같은 내용을 담은 `AGENTS.md`로 읽는다.
+- **Source of Truth**: `.agent-os/docs/`. 코드가 ground truth이며 문서와 다르면 코드를 확인한 뒤 문서를 고친다.
+- **공용 Skills**: `agent-os`, `agent-os-init`, `agent-os-archive`, `task-scan`, `error-check`, `error-log`.
+- **Validation**: `.agent-os/prompts/eval/`의 known-answer 세트로 규칙의 실효성을 측정한다.
 
-## 제공 기능
-- **스캔이 아니라 랭킹.** `rank.sh` 가 인덱스 전건에 점수를 매겨 상위 몇 줄만 돌려주고, 스킬은 상위 3건만 연다. 문제는 회수가 아니라 **순위**였다 — 평면 grep 은 정답을 찾긴 하지만 수십 건 사이에 묻어 놓는다.
-- **최강 신호는 지금 만질 파일이다.** `-f` 에 경로를 넘기면 키워드가 0히트여도 그 파일의 과거 에러가 뜬다.
-- **어느 언어로 물어도 된다.** `.agent-os/vocab.txt` 가 개념의 표기들을 잇는다 — 일본어 질의가 한국어로 적힌 에러에 닿는다. **문서는 재태깅하지 않는다.** 질의만 확장한다.
-- **재발은 산문이 아니라 카운트다.** 같은 근본원인은 새 문서가 아니라 카운터를 올린다. **3회부터는 문서 수정이 응답이 아니다** — 교훈을 승격하거나 기계적 게이트를 만든다.
-- **의사결정 기록**(`.agent-os/docs/adr/`): **무엇을 기각했는지**와 **무엇이 바뀌면 다시 볼지**. 인덱싱되므로 재제안이 착수 전에 기각 이력에 부딪힌다.
-- **스킬**(자동 라우팅): `task-scan`, `error-check`, `error-log`
-- **커맨드**: `/agent-os:init [--no-eval]` — `.agent-os/` + 루트 `CLAUDE.md` 프로토콜 섹션 생성(기존 파일 안 덮음). `--update` 는 기존 `CLAUDE.md` 의 프로토콜 구간만 갱신
-- **강제 동기화**(opt-in): `pre-commit` 훅이 **이번 커밋이 건드리는 문서만** 엄격히 검사한다(enum 값·날짜 형식·플레이스홀더 잔존). 기존 프로젝트가 자기 과거 때문에 막히지 않는다
-- **메모리 바운딩**: 생성 인덱스 + `/agent-os:archive` — **콜드 문서만** 아카이브(완료·무참조·미고정·오래됨; 단순 나이 아님). 전문은 git 보존. **교훈을 known-risks 로 먼저 승격**해야 아카이브가 안전하다
-- **조용한 실패 탐지**: 문서보다 낡은 인덱스, 30일 방치된 열린 태스크, pin 남용, 규칙이 되지 못한 재발, 빈 평가셋, 예산을 넘긴 프로토콜. **읽기 전용** — 알려주기만 하고 고치지 않는다
+## 호스트 지원
+
+| 호스트 | 진입점 | 지속 지침 | 쓰기 능력 |
+|---|---|---|---|
+| Claude Code | `.claude-plugin/`, `/agent-os:init` | `CLAUDE.md` | 로컬 full mode |
+| Codex | `.codex-plugin/`, `$agent-os-init`, `$agent-os` | `AGENTS.md` | Codex/local full mode |
+| ChatGPT | 설치된 Skill (`@agent-os` 등) | Skill이 기본 진입점. repo `AGENTS.md` 자동 로드를 전제로 하지 않음 | 연결된 도구 능력에 따라 다름; 일반 GitHub app은 read-only |
+
+Skills는 제품명이 아니라 **실제 capability**로 모드를 고른다. shell+쓰기 가능하면 full mode, repo write만 있으면 repository mode, 읽기만 가능하면 prior task/error/known-risk 조사와 정확한 수정안까지만 만들고 실제로 썼다고 말하지 않는다.
 
 ## 설치
-```
-/plugin marketplace add /absolute/path/to/agent-os-plugin
-/plugin install agent-os@agent-os
-```
-개발용 직접 로드(세션 한정): `claude --plugin-dir /absolute/path/to/agent-os-plugin`
-GitHub 푸시 후: `/plugin marketplace add <owner>/<repo>`
 
-## 사용
+### Claude Code
+
+```text
+/plugin marketplace add <owner>/<repo>
+/plugin install agent-os@agent-os
+/agent-os:init
 ```
-/agent-os:init             # 구조 스캐폴드 (평가셋 Validation 포함)
-/agent-os:init --no-eval   # 평가셋(Validation) 제외
+
+개발 checkout 직접 로드:
+
+```text
+claude --plugin-dir /absolute/path/to/agent-os
 ```
-스캐폴드 후:
-1. `git config core.hooksPath .agent-os/scripts/hooks` — 강제 동기화 훅 활성화
-2. 초회 전체 스캔으로 `.agent-os/docs/` 를 프로젝트 Source of Truth 로 채움(스캐폴드는 색인 스켈레톤만 생성)
-3. `.agent-os/prompts/eval/eval-set.md` 5행 작성 — **이 프로젝트가 실제로 물린 것**으로. 나중에 「이 규칙이 아직 값을 하는가」를 물을 수 있는 유일한 도구다. 이게 없으면 규칙을 **더하는 것도 빼는 것도** 근거 없는 추측이 된다
-4. 작업은 순서를 행진하는 게 아니라 **크기를 판정**한다: **trivial** 은 바로 답, **국소**는 `error-check` 만, **광역**만 풀 루프
+
+### Codex / ChatGPT
+
+OpenAI용 native manifest는 `.codex-plugin/plugin.json`, marketplace descriptor는 `.agents/plugins/marketplace.json`에 있다. 지원되는 ChatGPT/Codex Plugin 화면에서 이 repository/marketplace를 추가·설치한 뒤:
+
+```text
+Codex:   $agent-os-init
+ChatGPT: @agent-os-init
+```
+
+Codex는 작업 전에 root `AGENTS.md`를 읽는다. ChatGPT는 설치된 Skills가 주 진입점이며, GitHub만 연결된 일반 채팅은 repository write가 가능하다고 가정하지 않는다.
+
+## 프로젝트 초기화 / 마이그레이션
+
+```sh
+bash <plugin>/scripts/init.sh [--no-eval] /path/to/project
+bash <plugin>/scripts/init.sh --update /path/to/project
+```
+
+설치기는 `.agent-os/`를 만들고 **같은 프로토콜 블록**을 루트 `CLAUDE.md`와 `AGENTS.md`에 넣는다. `--update`는 marker 밖 사용자 텍스트를 보존한다. 기존 Claude-only 설치에서는 빠진 `AGENTS.md`를 생성한다. marker가 깨져 있으면 한쪽만 업데이트한 상태로 남기지 않고 중단한다.
+
+초기화 후:
+
+1. `git config core.hooksPath .agent-os/scripts/hooks`
+2. 실제 repo 스캔으로 `.agent-os/docs/` 작성
+3. 실제로 물린 사례로 eval set 작성
+4. 프로젝트 용어를 `.agent-os/vocab.txt`에 추가
 
 ## 일상 운영
 
-**매일 쓰는 루프에는 명령어가 없다 — 그냥 말하면 된다.** 슬래시 명령은 `init` 과 `archive`
-둘뿐이고, 나머지는 스킬 3종이 받는다. 스킬의 description 이 곧 **발동 조건**이라 평범한
-문장 하나로 에이전트가 알아서 호출한다.
+| 이렇게 말하면 | 동작 |
+|---|---|
+| "이 repo에서 agent-os 써줘" | `agent-os` |
+| "태스크로 정리 / 전에 했나?" | `task-scan` |
+| "이 실수 전에 했나?" | `error-check` |
+| "방금 실수 기록" | `error-log` |
+| "agent-os 초기화/업데이트" | `agent-os-init` |
+| "콜드 메모리 정리" | `agent-os-archive` |
 
-| 이렇게 말하면 | 뜨는 것 | 왜 걸리나 |
-|---|---|---|
-| "이거 태스크로 정리해줘" | `task-scan` | 찾기뿐 아니라 태스크 문서 **작성**까지 이 스킬 담당 |
-| "이거 전에 해봤나?" | `task-scan` | 관련 선행 작업을 먼저 물어 재작업을 막는다 |
-| "방금 실수 기록해줘" | `error-log` | 시키지 않아도 에이전트가 스스로 실수를 인지하면 발동 |
-| "이런 실수 전에도 했나?" | `error-check` | 코드 수정·디버깅 직전에도 자동으로 |
+작업은 크기로 나눈다. trivial은 바로 처리, local은 과거 에러 확인, broad만 known-risks + prior task/ADR + error history를 먼저 읽는다.
 
-**frontmatter 를 손으로 쓸 일은 없다.** 번호 채번, `_TEMPLATE.md` 복사, `status`·날짜 기입까지
-스킬이 한다. 새 태스크는 `.agent-os/prompts/tasks/NN_slug.md`, `status: planned` 로 생긴다.
+## 구조
 
-광역 작업 한 컷:
-
+```text
+agent-os/
+├── .agents/plugins/marketplace.json
+├── .claude-plugin/
+├── .codex-plugin/plugin.json
+├── skills/{agent-os,agent-os-init,agent-os-archive,task-scan,error-check,error-log}/
+├── commands/                  # Claude 호환 어댑터
+├── hooks/hooks.json
+├── scripts/
+├── templates/
+│   ├── AGENT_PROTOCOL.section.md
+│   ├── CLAUDE.section.md
+│   └── AGENTS.section.md
+└── docs/
 ```
-"로그인에 SSO 붙여줘"
-   -> task-scan 이 과거 인증 작업과 그걸 소유한 문서를 찾고, error-check 가
-      지금 만질 파일에 걸린 함정을 올려준다
-"태스크부터 만들어줘"          -> NN_sso_login.md, status: planned
-        ... 작업하는 동안 물린 것은 그때그때 기록된다 ...
-"이거 종료 처리해줘"           -> status: completed, completed/ 로 이동,
-                                 docs 는 같은 변경에서 갱신
+
+lab 저장소의 루트 `CLAUDE.md`/`AGENTS.md`는 dogfooding용 PRIVATE 상태다. 공개 `agent-os`에는 template/adapter만 배포한다.
+
+## 검증
+
+```sh
+sh scripts/host-adapter-test.sh
 ```
 
-기계적인 부분은 pre-commit 훅이 본다. 조용해진 것은 `agent-os-health.sh` 가 말해준다.
-**둘 다 대신 판단하지는 않는다.**
-
-**사람이 계속 하는 일.** 스킬은 라우팅과 서식을 맡지 판단을 대신하지 않는다. 실스캔으로
-`.agent-os/docs/` 채우기, 어떤 교훈이 `07_known-risks.md` 의 규칙이 될지 정하기, 이 변경이
-광역인지 판정하기, 끝났다고 승인하기 — 전부 사람 몫이다. 자동조종이 아니라 **사람을 루프
-안에 붙들어 두는 골조**다.
-
-## 튜닝
-임계값은 하드코딩이 아니라 **컨텍스트 윈도우에서 도출**. `AGENT_OS_CONTEXT_TOKENS`를 모델 윈도우로 지정하면 `AGENT_OS_MAX_ACTIVE`(기본 `CONTEXT_TOKENS/1000`)·`AGENT_OS_COMPACT_NUDGE`(기본 `MAX/4`)가 따라 스케일. 근거는 [docs/CONCEPT.ko.md](docs/CONCEPT.ko.md) 참조.
-
-세션마다 주입되는 텍스트에도 상한이 있다 — 프로토콜 블록 3,000자, 스킬 본문 각 2,000자.
-초과 시 규칙은 **추가가 아니라 교체**다. 근거는 매 세션 읽히는 프롬프트가 아니라 `.agent-os/docs/` 에 둔다.
-
-## 성능
-모든 스크립트가 셸 루프가 아니라 **awk 단일 패스**다. 취향 문제가 아니다 — Windows 는 프로세스 생성이 비싸서,
-루프 판은 문서 260건 인덱싱에 **43분**, compaction 미리보기에 **6분**이 걸렸다.
-그만큼 느린 도구는 아무도 안 돌리고, **안 돌리는 검사는 없는 검사**다.
-
-## 언어 정책
-스킬·커맨드·템플릿·스크립트는 **영어 전용**(프롬프트/운영용). README만 번역한다. 문서는 **검증된 사실만** 기록하고, 비밀값은 docs/prompts에 복사하지 않는다.
+protocol drift, Claude/OpenAI manifest name·version 불일치, Skill metadata, fresh init, Claude-only migration, marker 밖 텍스트 보존, malformed marker fail-closed를 검사한다. OS/awk/locale 차이는 기존 `portability-test.sh`가 담당한다.
 
 ## 라이선스
-MIT — [LICENSE](LICENSE).
+
+MIT — [LICENSE](LICENSE)
