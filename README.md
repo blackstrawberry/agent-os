@@ -49,6 +49,8 @@ Paste these directly into Claude Code:
 /agent-os:init
 ```
 
+`blackstrawberry/agent-os` is Claude Code's supported GitHub `owner/repo` shorthand. A full `https://github.com/...git` URL is **not required** for GitHub repositories; full Git URLs are also supported when needed, including non-GitHub hosts.
+
 Development checkout:
 
 ```sh
