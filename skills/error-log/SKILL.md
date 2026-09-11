@@ -15,8 +15,10 @@ Turn repeatable mistakes into structured patterns, not raw logs.
    ```sh
    sh .agent-os/scripts/rank.sh -q "<root cause>" -f "<files>" -k error -n 5
    ```
-   **No shell:** search `.agent-os/prompts/errors/` by root cause, paths, tags and summary.
-   Compare root causes, not symptoms.
+   **No shell:** search `.agent-os/prompts/errors/` by root cause, paths, tags and summary. If code
+   search is unavailable, unindexed, or an empty result is ambiguous, list the errors directory
+   and inspect likely filename/frontmatter/path matches before declaring the root cause new.
+   Compare root causes, not symptoms; open only the strongest few candidates.
 
 2. Same root cause -> no new doc. In a writable host bump `recurrence`, set `last_seen` to today,
    reopen if needed, merge new paths, and append a recurrence-history row. In read-only mode,

@@ -1,6 +1,6 @@
 ---
 name: task-scan
-description: On a new broad request, find related agent-os tasks and decisions before code changes. Use when asked whether work was done before, when creating/closing task docs, or for multi-file/design work. Works with shell ranking when available and repository search in read-only ChatGPT-style hosts.
+description: On a new broad request, find related agent-os tasks and decisions before code changes. Use when asked whether work was done before, when creating/closing task docs, or for multi-file/design work. Works with shell ranking when available and repository search/read tools in ChatGPT-style hosts.
 ---
 
 # task-scan
@@ -21,8 +21,9 @@ one-file bug normally needs `error-check` only.
    sh .agent-os/scripts/rank.sh -q "<request words>" -f "<paths>" -n 8
    ```
    **No shell:** search `.agent-os/prompts/tasks/`, `tasks/completed/` and
-   `.agent-os/docs/adr/` by request words, tags, summary and paths. Prefer a file-path hit.
-   Open the top 3 at most.
+   `.agent-os/docs/adr/` by request words, tags, summary and paths. If code search is unavailable,
+   unindexed, or a zero result cannot be distinguished from an index miss, list those known
+   directories instead and shortlist by filename/frontmatter/path. Open the top 3 at most.
 
 2. A decision record hit must be read before proposing the rejected option again. Check
    *Revisit when*: unmet means the decision still stands.

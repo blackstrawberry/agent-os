@@ -1,6 +1,6 @@
 {
   "name": "agent-os",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "A host-independent project memory and operating protocol for legacy or high-ambiguity codebases. Uses structured task, error, decision and source-of-truth docs plus relevance ranking, recurrence escalation and bounded-memory maintenance. Ships shared Skills for ChatGPT and Codex while preserving the Claude Code adapter.",
   "author": {
     "name": "kimjonghan",

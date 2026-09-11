@@ -31,8 +31,10 @@ Choose capability-first, not product-name-first:
    sh .agent-os/scripts/rank.sh -q "<request words>" -f "<paths>" -n 8
    ```
    Open the top 3 at most. Add `-k task` or `-k error` when the kind matters.
-4. Without shell, search task/error/ADR frontmatter by request words, file paths, tags and
-   summaries. Prefer file-path matches. Open at most the three strongest records.
+4. Without shell, try repository search over task/error/ADR frontmatter. **A zero result is not
+   proof of no history when code search may be unavailable or unindexed.** In that case list the
+   known `.agent-os/prompts/tasks`, `tasks/completed`, `prompts/errors`, and `docs/adr` directories,
+   shortlist by filename/frontmatter/path, then open at most the three strongest records.
 5. Code is ground truth; docs are source of truth. If they disagree, fix the docs in the same
    writable change. Never copy secrets into memory documents.
 6. Finish writable broad work by updating docs, setting the task `status: completed`, and moving
@@ -47,5 +49,5 @@ Task history -> `task-scan`. Prior mistakes -> `error-check`. New mistake -> `er
 
 <Self_Maintenance>
 Keep this skill host-neutral. Platform-specific installation belongs in README/GUIDE, not here.
-Budget 2000 chars.
+Budget 2200 chars.
 </Self_Maintenance>
